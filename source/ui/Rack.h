@@ -41,6 +41,10 @@ protected:
                       const juce::String& small, bool lit) const;
     void layoutPowerButton();
     bool isOn() const;
+    /** Radio buttons for a choice parameter (mode / program), lit for the current value. */
+    void setupChoiceButtons (juce::TextButton* buttons, int count, const juce::String& paramId, const juce::StringArray& labels);
+    void updateChoiceButtons (juce::TextButton* buttons, int count, const juce::String& paramId);
+    void layoutGrid (std::initializer_list<juce::Component*> row1, std::initializer_list<juce::Component*> row2);
 
     VFXAampsProcessor& proc;
     juce::String model, title;
@@ -77,9 +81,10 @@ public:
 private:
     void paintPanel (juce::Graphics&) override;
     juce::Rectangle<float> screen() const;
-    Knob time, division, feedback, tone, mix;
+    Knob time, division, feedback, diffusion, mix, lowCut, highCut, modDepth, modRate, duck;
     juce::TextButton sync { "SYNC" }, ping { "PING-PONG" };
     std::unique_ptr<ButtonAttachment> syncAtt, pingAtt;
+    std::array<juce::TextButton, 6> modes;
     juce::String shownText;
 };
 
@@ -93,7 +98,8 @@ public:
 private:
     void paintPanel (juce::Graphics&) override;
     juce::Rectangle<float> screen() const;
-    Knob size, decay, preDelay, tone, mix;
+    Knob decay, preDelay, size, diffusion, mod, mix, lowRT, highRT, early, lowCut, highCut, width;
+    std::array<juce::TextButton, 6> programs;
     juce::String shownText;
 };
 
@@ -101,7 +107,7 @@ private:
 class Rack : public juce::Component
 {
 public:
-    static constexpr int kWidth = 1240, kHeight = 434;
+    static constexpr int kWidth = 1240, kHeight = 506;
     explicit Rack (VFXAampsProcessor&);
     void tick();
     void paint (juce::Graphics&) override;

@@ -43,6 +43,13 @@ VFXAampsProcessor::VFXAampsProcessor()
     pRvbOn = param (apvts, P::rvbOn);         pRvbSize = param (apvts, P::rvbSize);
     pRvbDecay = param (apvts, P::rvbDecay);   pRvbPre = param (apvts, P::rvbPre);
     pRvbTone = param (apvts, P::rvbTone);     pRvbMix = param (apvts, P::rvbMix);
+    pDlyMode = param (apvts, P::dlyMode);     pDlyLowCut = param (apvts, P::dlyLowCut);
+    pDlyModDepth = param (apvts, P::dlyModDepth); pDlyModRate = param (apvts, P::dlyModRate);
+    pDlyDuck = param (apvts, P::dlyDuck);     pDlyDiff = param (apvts, P::dlyDiff);
+    pRvbProgram = param (apvts, P::rvbProgram); pRvbDiff = param (apvts, P::rvbDiff);
+    pRvbMod = param (apvts, P::rvbMod);       pRvbLowRT = param (apvts, P::rvbLowRT);
+    pRvbHighRT = param (apvts, P::rvbHighRT); pRvbEarly = param (apvts, P::rvbEarly);
+    pRvbLowCut = param (apvts, P::rvbLowCut); pRvbWidth = param (apvts, P::rvbWidth);
     for (int k = 0; k < vfxa::kNumSlots; ++k) pSlotTrim[static_cast<size_t> (k)] = param (apvts, P::slotTrim (k));
     for (int k = 0; k < vfxa::kNumSlots; ++k) { pSlotIr[static_cast<size_t> (k)] = param (apvts, P::slotIr (k)); pendingSlotIr[static_cast<size_t> (k)].store (0); }
     for (int k = 0; k < kNumPedals; ++k)
@@ -408,26 +415,40 @@ void VFXAampsProcessor::processChunk (int n) noexcept
         graphicEq.setGains (bands, pEqOn->load (std::memory_order_relaxed) > 0.5f);
         graphicEq.process (l, r, n);
 
-        vfxa::StereoDelay::Params dp;
-        dp.on = pDlyOn->load (std::memory_order_relaxed) > 0.5f;
-        const bool sync = pDlySync->load (std::memory_order_relaxed) > 0.5f;
-        dp.timeMs = sync ? vfxa::params::delayDivisionBeats (static_cast<int> (pDlyDiv->load (std::memory_order_relaxed))) * 60000.0 / hostBpm
-                         : static_cast<double> (pDlyTime->load (std::memory_order_relaxed));
-        dp.timeMs = std::min (dp.timeMs, vfxa::StereoDelay::kMaxSeconds * 1000.0);
+        auto ld = [] (std::atomic<float>* v) { return static_cast<double> (v->load (std::memory_order_relaxed)); };
+        vfxa::StudioDelay::Params dp;
+        dp.on = ld (pDlyOn) > 0.5;
+        dp.mode = static_cast<int> (ld (pDlyMode));
+        const bool sync = ld (pDlySync) > 0.5;
+        dp.timeMs = sync ? vfxa::params::delayDivisionBeats (static_cast<int> (ld (pDlyDiv))) * 60000.0 / hostBpm : ld (pDlyTime);
+        dp.timeMs = std::min (dp.timeMs, vfxa::StudioDelay::kMaxSeconds * 1000.0);
         delayTimeMs.store (static_cast<float> (dp.timeMs), std::memory_order_relaxed);
-        dp.feedback = pDlyFb->load (std::memory_order_relaxed);
-        dp.mix = pDlyMix->load (std::memory_order_relaxed);
-        dp.toneHz = pDlyTone->load (std::memory_order_relaxed);
-        dp.pingPong = pDlyPing->load (std::memory_order_relaxed) > 0.5f;
+        dp.feedback = ld (pDlyFb);
+        dp.mix = ld (pDlyMix);
+        dp.highCutHz = ld (pDlyTone);
+        dp.lowCutHz = ld (pDlyLowCut);
+        dp.modDepth = ld (pDlyModDepth);
+        dp.modRate = ld (pDlyModRate);
+        dp.duck = ld (pDlyDuck);
+        dp.diffusion = ld (pDlyDiff);
+        dp.pingPong = ld (pDlyPing) > 0.5;
         delay.process (l, r, n, dp);
 
-        vfxa::FdnReverb::Params rp;
-        rp.on = pRvbOn->load (std::memory_order_relaxed) > 0.5f;
-        rp.size = pRvbSize->load (std::memory_order_relaxed);
-        rp.decayS = pRvbDecay->load (std::memory_order_relaxed);
-        rp.preDelayMs = pRvbPre->load (std::memory_order_relaxed);
-        rp.toneHz = pRvbTone->load (std::memory_order_relaxed);
-        rp.mix = pRvbMix->load (std::memory_order_relaxed);
+        vfxa::StudioReverb::Params rp;
+        rp.on = ld (pRvbOn) > 0.5;
+        rp.program = static_cast<int> (ld (pRvbProgram));
+        rp.size = ld (pRvbSize);
+        rp.decayS = ld (pRvbDecay);
+        rp.preDelayMs = ld (pRvbPre);
+        rp.highCutHz = ld (pRvbTone);
+        rp.lowCutHz = ld (pRvbLowCut);
+        rp.diffusion = ld (pRvbDiff);
+        rp.mod = ld (pRvbMod);
+        rp.lowRT = ld (pRvbLowRT);
+        rp.highRT = ld (pRvbHighRT);
+        rp.early = ld (pRvbEarly);
+        rp.width = ld (pRvbWidth);
+        rp.mix = ld (pRvbMix);
         reverb.process (l, r, n, rp);
     }
 

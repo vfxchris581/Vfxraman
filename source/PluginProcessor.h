@@ -7,6 +7,8 @@
 #include "vfxa/Filters.h"
 #include "vfxa/MorphEngine.h"
 #include "vfxa/PostFx.h"
+#include "vfxa/StudioDelay.h"
+#include "vfxa/StudioReverb.h"
 #include "vfxa/Tuner.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -135,8 +137,8 @@ private:
     vfxa::MorphEngine engine;
     vfxa::DualIr irs;
     vfxa::GraphicEq graphicEq;
-    vfxa::StereoDelay delay;
-    vfxa::FdnReverb reverb;
+    vfxa::StudioDelay delay;
+    vfxa::StudioReverb reverb;
     vfxa::Tuner tuner;
     struct Pedal
     {
@@ -181,7 +183,10 @@ private:
     std::array<IrParamPtrs, kNumIrs> pIr {};
     std::atomic<float>* pEqOn = nullptr, * pDlyOn = nullptr, * pDlyTime = nullptr, * pDlySync = nullptr, * pDlyDiv = nullptr,
                       * pDlyFb = nullptr, * pDlyMix = nullptr, * pDlyTone = nullptr, * pDlyPing = nullptr,
-                      * pRvbOn = nullptr, * pRvbSize = nullptr, * pRvbDecay = nullptr, * pRvbPre = nullptr, * pRvbTone = nullptr, * pRvbMix = nullptr;
+                      * pRvbOn = nullptr, * pRvbSize = nullptr, * pRvbDecay = nullptr, * pRvbPre = nullptr, * pRvbTone = nullptr, * pRvbMix = nullptr,
+                      * pDlyMode = nullptr, * pDlyLowCut = nullptr, * pDlyModDepth = nullptr, * pDlyModRate = nullptr, * pDlyDuck = nullptr, * pDlyDiff = nullptr,
+                      * pRvbProgram = nullptr, * pRvbDiff = nullptr, * pRvbMod = nullptr, * pRvbLowRT = nullptr, * pRvbHighRT = nullptr,
+                      * pRvbEarly = nullptr, * pRvbLowCut = nullptr, * pRvbWidth = nullptr;
     std::array<std::atomic<float>*, vfxa::GraphicEq::kBands> pEqBand {};
     std::array<std::atomic<float>*, vfxa::kNumSlots> pSlotIr {};
     std::array<std::atomic<float>*, kNumPedals> pPedalOn {}, pPedalLevel {};

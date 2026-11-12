@@ -495,6 +495,8 @@ static void testEffectsRack()
     setParam (p, P::dlyMix, 1.0f);
     setParam (p, P::dlyFeedback, 0.0f);
     setParam (p, P::dlyTone, 20000.0f);
+    setParam (p, P::dlyLowCut, 20.0f);   // filters fully open and no modulation: exact timing
+    setParam (p, P::dlyModDepth, 0.0f);
     run (p, std::vector<float> (4800, 0.0f), 480);
     std::vector<float> imp (static_cast<size_t> (fs * 1.0), 0.0f);
     imp[1000] = 0.5f;

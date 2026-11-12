@@ -3,6 +3,8 @@
 #pragma once
 
 #include "vfxa/PostFx.h"
+#include "vfxa/StudioDelay.h"
+#include "vfxa/StudioReverb.h"
 #include "vfxa/Tuner.h"
 
 #include <algorithm>
@@ -106,141 +108,245 @@ static void testGraphicEq()
     }
 }
 
+namespace postfx_tests
+{
+/** T20-based RT60 from the Schroeder energy decay of a stereo impulse response. */
+inline double rt60 (const std::vector<float>& l, const std::vector<float>& r, double fs)
+{
+    std::vector<double> edc (l.size());
+    double acc = 0.0;
+    for (size_t i = l.size(); i-- > 0;) { acc += static_cast<double> (l[i]) * l[i] + static_cast<double> (r[i]) * r[i]; edc[i] = acc; }
+    size_t i5 = 0, i25 = 0;
+    for (size_t i = 0; i < edc.size(); ++i)
+    {
+        const double db = 10.0 * std::log10 (edc[i] / edc[0] + 1e-30);
+        if (! i5 && db < -5.0) i5 = i;
+        if (! i25 && db < -25.0) { i25 = i; break; }
+    }
+    return i25 > i5 ? 3.0 * static_cast<double> (i25 - i5) / fs : 0.0;
+}
+
+inline std::vector<float> bandFilter (const std::vector<float>& x, double fs, vfxa::Svf::Type type, double hz)
+{
+    vfxa::Svf a, b;
+    for (auto* f : { &a, &b }) { f->setSampleRate (fs); f->set (type, hz, 0.7071); }
+    std::vector<float> y (x.size());
+    for (size_t i = 0; i < x.size(); ++i) y[i] = static_cast<float> (b.process (a.process (x[i])));
+    return y;
+}
+
+inline double peakAbs (const std::vector<float>& v, size_t a = 0, size_t b = SIZE_MAX)
+{
+    double p = 0.0;
+    for (size_t i = a; i < std::min (b, v.size()); ++i) p = std::max (p, static_cast<double> (std::fabs (v[i])));
+    return p;
+}
+} // namespace postfx_tests
+
 static void testDelay()
 {
     using namespace postfx_tests;
-    std::printf ("Delay\n");
+    using D = vfxa::StudioDelay;
+    std::printf ("Studio delay (VX-D8)\n");
     const double fs = 48000.0;
-    vfxa::StereoDelay::Params p;
-    p.on = true; p.timeMs = 250.0; p.feedback = 0.5; p.mix = 1.0; p.toneHz = 20000.0;
+    D::Params p;
+    p.on = true; p.mode = D::Digital; p.timeMs = 250.0; p.feedback = 0.5; p.mix = 1.0;
+    p.lowCutHz = 20.0; p.highCutHz = 20000.0; p.modDepth = 0.0;
+    std::vector<float> imp (static_cast<size_t> (fs * 1.0), 0.0f);
+    imp[1000] = 1.0f;
+    std::vector<float> l, r;
 
     {
-        vfxa::StereoDelay d;
-        d.prepare (fs);
-        std::vector<float> x (static_cast<size_t> (fs * 1.0), 0.0f);
-        x[1000] = 1.0f;
-        std::vector<float> l, r;
-        runStereo (x, l, r, 512, [&] (float* a, float* b, int n, int) { d.process (a, b, n, p); });
+        D d; d.prepare (fs);
+        runStereo (imp, l, r, 512, [&] (float* a, float* b, int n, int) { d.process (a, b, n, p); });
         auto peakNear = [&] (size_t at) { size_t best = at; for (size_t i = at - 20; i < at + 20; ++i) if (std::fabs (l[i]) > std::fabs (l[best])) best = i; return best; };
-        const size_t e1 = peakNear (1000 + 12000), e2 = peakNear (1000 + 24000);
-        CHECK (l[1000] == 1.0f, "dry signal passes unchanged (%.3f)", l[1000]);
-        CHECK (e1 == 13000 && e2 == 25000, "repeats at 250 / 500 ms (samples %zu, %zu)", e1, e2);
+        const size_t e1 = peakNear (13000), e2 = peakNear (25000);
         const double ratio = std::fabs (l[e2]) / std::fabs (l[e1]);
-        CHECK (std::fabs (l[e1]) > 0.8 && ratio > 0.4 && ratio < 0.55, "first repeat %.3f, feedback ratio %.3f (set 0.5)", std::fabs (l[e1]), ratio);
+        CHECK (l[1000] == 1.0f && e1 == 13000 && e2 == 25000, "digital: dry untouched, repeats at 250 / 500 ms (%zu, %zu)", e1, e2);
+        CHECK (std::fabs (l[e1]) > 0.75 && ratio > 0.38 && ratio < 0.56, "digital: first repeat %.3f, feedback ratio %.3f (set 0.5)", std::fabs (l[e1]), ratio);
     }
-    // ping-pong: first repeat on the left, second on the right
     {
-        vfxa::StereoDelay d;
-        d.prepare (fs);
+        D d; d.prepare (fs);
         auto q = p; q.pingPong = true;
-        std::vector<float> x (static_cast<size_t> (fs * 1.0), 0.0f);
-        x[1000] = 1.0f;
-        std::vector<float> l, r;
-        runStereo (x, l, r, 512, [&] (float* a, float* b, int n, int) { d.process (a, b, n, q); });
-        CHECK (std::fabs (l[13000]) > 0.4 && std::fabs (r[13000]) < 1e-6 && std::fabs (r[25000]) > 0.2 && std::fabs (l[25000]) < 1e-6,
-               "ping-pong alternates L %.3f R %.3f / L %.3f R %.3f", l[13000], r[13000], l[25000], r[25000]);
+        runStereo (imp, l, r, 512, [&] (float* a, float* b, int n, int) { d.process (a, b, n, q); });
+        CHECK (peakAbs (l, 12900, 13100) > 0.3 && peakAbs (r, 12900, 13100) < 1e-6 && peakAbs (r, 24900, 25100) > 0.15 && peakAbs (l, 24900, 25100) < 1e-6,
+               "ping-pong alternates left / right");
     }
-    // trails: switched off after the first impulse, so a second impulse gets no echo but the first keeps repeating
     {
-        vfxa::StereoDelay d;
-        d.prepare (fs);
-        std::vector<float> x (static_cast<size_t> (fs * 1.5), 0.0f);
-        x[1000] = 1.0f; x[30000] = 1.0f;
-        std::vector<float> l, r;
-        runStereo (x, l, r, 512, [&] (float* a, float* b, int n, int blk) { auto q = p; q.on = blk * 512 < 20000; d.process (a, b, n, q); });
-        CHECK (std::fabs (l[37000]) > 0.05 && std::fabs (l[42000 - 1]) < 0.02 && std::fabs (l[42000]) < 0.02,
-               "trails ring out after switching off (%.3f), no new echoes (%.4f)", l[37000], l[42000]);
+        D d; d.prepare (fs);
+        auto q = p; q.mode = D::Dual; q.feedback = 0.0;
+        runStereo (imp, l, r, 512, [&] (float* a, float* b, int n, int) { d.process (a, b, n, q); });
+        CHECK (peakAbs (l, 12900, 13100) > 0.5 && peakAbs (r, 12900, 13100) < 1e-3 && peakAbs (r, 18900, 19100) > 0.5,
+               "dual: left at 250 ms, right at 375 ms");
     }
-    // turning the time knob while a tone plays glides instead of clicking; heavy feedback stays bounded
+    // reverse: a swell (quiet -> loud) comes back loud -> quiet
     {
-        vfxa::StereoDelay d;
-        d.prepare (fs);
-        const auto x = tone (fs, 4.0, 220.0);
-        std::vector<float> l, r;
-        auto q = p; q.feedback = 0.6; q.mix = 0.5;
-        runStereo (x, l, r, 256, [&] (float* a, float* b, int n, int blk) { q.timeMs = blk % 40 < 20 ? 120.0 : 480.0; d.process (a, b, n, q); });
-        bool finite = true; for (float v : l) finite &= std::isfinite (v);
-        CHECK (finite && maxStep (l) < 0.2, "time changes while playing are click-free (max step %.4f)", maxStep (l));
+        D d; d.prepare (fs);
+        auto q = p; q.mode = D::Reverse; q.timeMs = 300.0; q.feedback = 0.0;
+        std::vector<float> swell (static_cast<size_t> (fs * 1.2), 0.0f);
+        for (size_t i = 0; i < static_cast<size_t> (0.3 * fs); ++i)
+            swell[i] = static_cast<float> (0.5 * (static_cast<double> (i) / (0.3 * fs)) * std::sin (2.0 * kPi * 440.0 * static_cast<double> (i) / fs));
+        runStereo (swell, l, r, 256, [&] (float* a, float* b, int n, int) { d.process (a, b, n, q); });
+        const double early = rmsOf (l, static_cast<size_t> (0.33 * fs), static_cast<size_t> (0.42 * fs));
+        const double late = rmsOf (l, static_cast<size_t> (0.48 * fs), static_cast<size_t> (0.57 * fs));
+        CHECK (early > 1.5 * late && early > 0.05, "reverse: the swell plays backwards (%.3f then %.3f)", early, late);
+    }
+    // ducking: repeats dip while playing, come back once the guitar stops
+    {
+        auto wetWhile = [&] (double duck, double& after)
+        {
+            D d; d.prepare (fs);
+            auto q = p; q.duck = duck; q.feedback = 0.6; q.timeMs = 180.0;
+            std::vector<float> x (static_cast<size_t> (fs * 2.5), 0.0f);
+            for (size_t i = 0; i < static_cast<size_t> (1.5 * fs); ++i) x[i] = static_cast<float> (0.25 * std::sin (2.0 * kPi * 330.0 * static_cast<double> (i) / fs));
+            runStereo (x, l, r, 256, [&] (float* a, float* b, int n, int) { d.process (a, b, n, q); });
+            std::vector<float> wet (l.size());
+            for (size_t i = 0; i < l.size(); ++i) wet[i] = l[i] - x[i];
+            after = rmsOf (wet, static_cast<size_t> (2.0 * fs), static_cast<size_t> (2.4 * fs));
+            return rmsOf (wet, static_cast<size_t> (0.8 * fs), static_cast<size_t> (1.4 * fs));
+        };
+        double a0 = 0, a1 = 0;
+        const double w0 = wetWhile (0.0, a0), w1 = wetWhile (1.0, a1);
+        const double duckDb = 20.0 * std::log10 (w1 / w0), backDb = 20.0 * std::log10 (a1 / a0);
+        CHECK (duckDb < -12.0 && backDb > -6.0, "ducking: repeats %.1f dB while playing, %.1f dB after", duckDb, backDb);
+    }
+    // diffusion smears each repeat (lower crest factor)
+    {
+        auto crest = [&] (double diffusion)
+        {
+            D d; d.prepare (fs);
+            auto q = p; q.diffusion = diffusion; q.feedback = 0.0;
+            runStereo (imp, l, r, 512, [&] (float* a, float* b, int n, int) { d.process (a, b, n, q); });
+            return peakAbs (l, 12000, 16000) / (rmsOf (l, 12000, 16000) + 1e-12);
+        };
+        const double c0 = crest (0.0), c1 = crest (1.0);
+        CHECK (c1 < c0 * 0.4, "diffusion smears the repeats (crest %.1f -> %.1f)", c0, c1);
+    }
+    // every mode: max feedback on loud noise stays bounded; mode switching + knob moves on a tone are click-free
+    {
+        std::mt19937 rng (5); std::normal_distribution<float> nd (0.0f, 0.5f);
+        std::vector<float> loud (static_cast<size_t> (fs * 4.0)); for (auto& v : loud) v = nd (rng);
+        double worst = 0.0;
+        for (int mode = 0; mode < D::kNumModes; ++mode)
+        {
+            D d; d.prepare (fs);
+            auto q = p; q.mode = mode; q.feedback = 0.98; q.timeMs = 40.0; q.diffusion = 0.7; q.modDepth = 1.0;
+            runStereo (loud, l, r, 512, [&] (float* a, float* b, int n, int) { d.process (a, b, n, q); });
+            worst = std::max (worst, std::max (peakAbs (l), peakAbs (r)));
+        }
+        CHECK (std::isfinite (worst) && worst < 12.0, "all modes at 98%% feedback on loud noise stay bounded (peak %.2f)", worst);
 
-        vfxa::StereoDelay h;
-        h.prepare (fs);
-        std::mt19937 rng (1); std::normal_distribution<float> nd (0.0f, 0.5f);
-        std::vector<float> loud (static_cast<size_t> (fs * 8.0)); for (auto& v : loud) v = nd (rng);
-        auto z = p; z.feedback = 0.95; z.timeMs = 30.0;
-        runStereo (loud, l, r, 512, [&] (float* a, float* b, int n, int) { h.process (a, b, n, z); });
-        double peak = 0; for (float v : l) peak = std::max (peak, (double) std::fabs (v));
-        CHECK (std::isfinite (peak) && peak < 12.0, "max feedback on loud noise stays bounded (peak %.2f)", peak);
+        D d; d.prepare (fs);
+        const auto t = tone (fs, 6.0, 220.0, 0.2);
+        auto q = p; q.feedback = 0.6; q.mix = 0.5; q.modDepth = 0.4;
+        runStereo (t, l, r, 256, [&] (float* a, float* b, int n, int blk)
+        {
+            q.mode = (blk / 70) % D::kNumModes;
+            q.timeMs = blk % 40 < 20 ? 140.0 : 420.0;
+            q.duck = (blk / 33) % 2 ? 0.8 : 0.0;
+            q.diffusion = (blk / 27) % 2 ? 0.9 : 0.0;
+            q.on = (blk / 200) % 2 == 0;
+            d.process (a, b, n, q);
+        });
+        bool finite = true; for (float v : l) finite &= std::isfinite (v);
+        CHECK (finite && maxStep (l) < 0.2, "mode switches, time / duck / diffusion moves and on/off are click-free (max step %.4f)", maxStep (l));
     }
 }
 
 static void testReverb()
 {
     using namespace postfx_tests;
-    std::printf ("Reverb\n");
-    for (double fs : { 44100.0, 96000.0 })
+    using R = vfxa::StudioReverb;
+    std::printf ("Studio reverb (VX-R16)\n");
+    auto impulseResponse = [] (double fs, const R::Params& p, double seconds, std::vector<float>& l, std::vector<float>& r)
     {
-        for (double rt : { 1.5, 5.0 })
-        {
-            vfxa::FdnReverb rv;
-            rv.prepare (fs);
-            vfxa::FdnReverb::Params p;
-            p.on = true; p.decayS = rt; p.mix = 1.0; p.preDelayMs = 0.0; p.toneHz = 18000.0; p.size = 0.8;
-            std::vector<float> x (static_cast<size_t> (fs * (rt * 1.6 + 0.5)), 0.0f);
-            x[100] = 1.0f;
-            std::vector<float> l, r;
-            runStereo (x, l, r, 512, [&] (float* a, float* b, int n, int) { rv.process (a, b, n, p); });
-            l[100] -= 1.0f; r[100] -= 1.0f; // wet only
-            // Schroeder backward integration -> fit the -5 .. -25 dB part (T20 x 3)
-            std::vector<double> edc (l.size());
-            double acc = 0.0;
-            for (size_t i = l.size(); i-- > 0;) { acc += static_cast<double> (l[i]) * l[i] + static_cast<double> (r[i]) * r[i]; edc[i] = acc; }
-            size_t i5 = 0, i25 = 0;
-            for (size_t i = 0; i < edc.size(); ++i)
+        R rv; rv.prepare (fs);
+        std::vector<float> x (static_cast<size_t> (fs * seconds), 0.0f);
+        x[100] = 1.0f;
+        runStereo (x, l, r, 512, [&] (float* a, float* b, int n, int) { rv.process (a, b, n, p); });
+        l[100] -= 1.0f; r[100] -= 1.0f; // wet only
+    };
+    std::vector<float> l, r;
+    for (double fs : { 44100.0, 96000.0 })
+        for (int prog : { (int) R::Room, (int) R::Hall, (int) R::Plate, (int) R::Cathedral })
+            for (double rt : { 1.5, 5.0 })
             {
-                const double db = 10.0 * std::log10 (edc[i] / edc[0] + 1e-30);
-                if (! i5 && db < -5.0) i5 = i;
-                if (! i25 && db < -25.0) { i25 = i; break; }
+                R::Params p;
+                p.on = true; p.program = prog; p.decayS = rt; p.mix = 1.0; p.preDelayMs = 0.0; p.lowRT = 1.0; p.highRT = 1.0;
+                p.highCutHz = 20000.0; p.lowCutHz = 20.0; p.early = 0.0;
+                impulseResponse (fs, p, rt * 1.5 + 0.5, l, r);
+                const double t = rt60 (l, r, fs);
+                double c = 0, el = 0, er = 0;
+                for (size_t i = 0; i < l.size(); ++i) { c += (double) l[i] * r[i]; el += (double) l[i] * l[i]; er += (double) r[i] * r[i]; }
+                const double corr = c / std::sqrt (el * er + 1e-30);
+                CHECK (t > rt * 0.75 && t < rt * 1.3 && std::fabs (corr) < 0.3, "%s %.1f s @ %.0f Hz: RT60 %.2f s, L/R correlation %.2f",
+                       R::programName (prog), rt, fs, t, corr);
             }
-            const double t60 = i25 > i5 ? 3.0 * static_cast<double> (i25 - i5) / fs : 0.0;
-            CHECK (t60 > rt * 0.65 && t60 < rt * 1.35, "decay %.1f s measures RT60 %.2f s (%.0f Hz)", rt, t60, fs);
 
-            double c = 0, el = 0, er = 0;
-            for (size_t i = 0; i < l.size(); ++i) { c += static_cast<double> (l[i]) * r[i]; el += static_cast<double> (l[i]) * l[i]; er += static_cast<double> (r[i]) * r[i]; }
-            const double corr = c / std::sqrt (el * er + 1e-30);
-            CHECK (std::fabs (corr) < 0.35, "wide stereo tail (L/R correlation %.2f)", corr);
-        }
-    }
-    // longest decay on loud noise: bounded, then decays away; on/off and knob moves while a tone plays are click-free
+    // separate low / high decay
     {
         const double fs = 48000.0;
-        vfxa::FdnReverb rv;
-        rv.prepare (fs);
-        vfxa::FdnReverb::Params p;
-        p.on = true; p.decayS = 20.0; p.mix = 1.0; p.size = 1.0;
+        R::Params p;
+        p.on = true; p.program = R::Hall; p.decayS = 3.0; p.mix = 1.0; p.preDelayMs = 0.0; p.early = 0.0; p.highCutHz = 20000.0; p.lowCutHz = 20.0;
+        p.lowRT = 1.8; p.highRT = 0.3;
+        impulseResponse (fs, p, 6.5, l, r);
+        const double tLow = rt60 (bandFilter (l, fs, vfxa::Svf::Type::LowPass, 120.0), bandFilter (r, fs, vfxa::Svf::Type::LowPass, 120.0), fs);
+        const double tMid = rt60 (bandFilter (bandFilter (l, fs, vfxa::Svf::Type::HighPass, 700.0), fs, vfxa::Svf::Type::LowPass, 1400.0),
+                                  bandFilter (bandFilter (r, fs, vfxa::Svf::Type::HighPass, 700.0), fs, vfxa::Svf::Type::LowPass, 1400.0), fs);
+        const double tHigh = rt60 (bandFilter (l, fs, vfxa::Svf::Type::HighPass, 8000.0), bandFilter (r, fs, vfxa::Svf::Type::HighPass, 8000.0), fs);
+        CHECK (tLow > tMid * 1.3 && tHigh < tMid * 0.6, "LOW RT x1.8 / HIGH RT x0.3: lows %.2f s, mids %.2f s, highs %.2f s", tLow, tMid, tHigh);
+    }
+    // early reflections: hall has them, plate doesn't
+    {
+        const double fs = 48000.0;
+        auto earlyEnergy = [&] (int prog, double early)
+        {
+            R::Params p;
+            p.on = true; p.program = prog; p.decayS = 2.0; p.mix = 1.0; p.preDelayMs = 0.0; p.early = early;
+            impulseResponse (fs, p, 0.3, l, r);
+            return rmsOf (l, 0, static_cast<size_t> (0.04 * fs));
+        };
+        const double hallOn = earlyEnergy (R::Hall, 1.0), hallOff = earlyEnergy (R::Hall, 0.0);
+        const double plateOn = earlyEnergy (R::Plate, 1.0), plateOff = earlyEnergy (R::Plate, 0.0);
+        CHECK (hallOn > hallOff * 1.5 && std::fabs (plateOn - plateOff) < plateOff * 0.05 + 1e-9,
+               "EARLY: hall %.4f -> %.4f, plate unchanged (%.4f / %.4f)", hallOff, hallOn, plateOff, plateOn);
+    }
+    // extremes: 20 s, size 1, low RT x2, full diffusion + modulation on loud noise -> bounded and decaying
+    {
+        const double fs = 48000.0;
+        R rv; rv.prepare (fs);
+        R::Params p;
+        p.on = true; p.program = R::Cathedral; p.decayS = 20.0; p.size = 1.0; p.lowRT = 2.0; p.highRT = 1.0; p.diffusion = 1.0; p.mod = 1.0; p.mix = 1.0;
         std::mt19937 rng (2); std::normal_distribution<float> nd (0.0f, 0.5f);
-        std::vector<float> x (static_cast<size_t> (fs * 6.0), 0.0f);
+        std::vector<float> x (static_cast<size_t> (fs * 8.0), 0.0f);
         for (size_t i = 0; i < static_cast<size_t> (fs); ++i) x[i] = nd (rng);
-        std::vector<float> l, r;
         runStereo (x, l, r, 512, [&] (float* a, float* b, int n, int) { rv.process (a, b, n, p); });
-        double peak = 0; for (float v : l) peak = std::max (peak, (double) std::fabs (v));
-        CHECK (std::isfinite (peak) && peak < 8.0 && rmsOf (l, x.size() - 24000, x.size()) < rmsOf (l, 48000, 96000),
-               "20 s decay stays bounded (peak %.2f) and decays", peak);
-
-        vfxa::FdnReverb rv2;
-        rv2.prepare (fs);
-        const auto t = tone (fs, 4.0, 330.0);
-        vfxa::FdnReverb::Params q;
+        const double peak = std::max (peakAbs (l), peakAbs (r));
+        CHECK (std::isfinite (peak) && peak < 8.0 && rmsOf (l, x.size() - 48000, x.size()) < rmsOf (l, 48000, 96000),
+               "most extreme settings stay bounded (peak %.2f) and decay", peak);
+    }
+    // programs switched and every knob moved while a tone plays: click-free
+    {
+        const double fs = 48000.0;
+        R rv; rv.prepare (fs);
+        const auto t = tone (fs, 6.0, 330.0, 0.2);
+        R::Params q;
         q.mix = 0.6;
         runStereo (t, l, r, 256, [&] (float* a, float* b, int n, int blk)
         {
-            q.on = (blk / 50) % 2 == 0;
-            q.size = (blk / 30) % 2 ? 0.2 : 0.9;
-            q.decayS = (blk / 20) % 2 ? 0.8 : 4.0;
-            q.preDelayMs = (blk / 25) % 2 ? 0.0 : 120.0;
-            rv2.process (a, b, n, q);
+            q.on = (blk / 150) % 2 == 0;
+            q.program = (blk / 55) % R::kNumPrograms;
+            q.size = (blk / 30) % 2 ? 0.1 : 0.95;
+            q.decayS = (blk / 20) % 2 ? 0.6 : 6.0;
+            q.preDelayMs = (blk / 25) % 2 ? 0.0 : 150.0;
+            q.lowRT = (blk / 17) % 2 ? 0.5 : 2.0;
+            q.highRT = (blk / 19) % 2 ? 0.1 : 1.0;
+            q.width = (blk / 23) % 2 ? 0.0 : 1.5;
+            q.mod = (blk / 21) % 2 ? 0.0 : 1.0;
+            rv.process (a, b, n, q);
         });
         bool finite = true; for (float v : l) finite &= std::isfinite (v);
-        CHECK (finite && maxStep (l) < 0.25, "reverb on/off and knob moves are click-free (max step %.4f)", maxStep (l));
+        CHECK (finite && maxStep (l) < 0.25, "program switches, knob moves and on/off are click-free (max step %.4f)", maxStep (l));
     }
 }
 

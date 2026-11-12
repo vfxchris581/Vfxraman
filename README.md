@@ -41,10 +41,18 @@ VST3, AU (macOS) and Standalone; macOS universal (Apple Silicon + Intel) and Win
   Accurate to about a cent from low F# on an 8-string up to C6. Click it to mute the output while you tune.
 - **Effects rack** under the amp head, in rack-mount units (show or hide it with **RACK**):
   - **VX-10 graphic EQ:** 10 bands (31 Hz – 16 kHz, ±12 dB) on faders, a live response curve, FLAT to reset.
-  - **VX-D2 stereo delay:** time up to 2.5 s or synced to the host tempo (1/1 … 1/16, dotted and triplet), feedback, tone,
-    mix, ping-pong. Turning TIME glides like tape; switching it off lets the repeats ring out.
-  - **VX-R8 stereo reverb:** 8-line feedback delay network — size (room → cathedral), decay 0.2–20 s, pre-delay, tone, mix.
-    The tail rings out when switched off.
+  - **VX-D8 studio multi-delay:** six modes — DIGITAL (pristine), TAPE (wow, flutter, saturation, repeats darken), ANALOG
+    (warm bucket-brigade style), MOD (chorused repeats), REVERSE (each stretch of playing comes back backwards) and DUAL
+    (right side at 1.5x for a rhythmic spread). Time up to 2.5 s or synced to the host (1/1 … 1/16, dotted, triplet), feedback,
+    diffusion (smears repeats into a wash), mix, low cut / high cut in the feedback loop, modulation depth and rate, ducking
+    (repeats dip while you play and swell back when you stop), ping-pong. Trails ring out when switched off.
+  - **VX-R16 studio reverb:** true-stereo, 16-line feedback delay network with modulated lines and in-loop diffusion. Programs
+    AMBIENCE, ROOM, CHAMBER, HALL, PLATE and CATHEDRAL, each with its own early reflections and tank. Decay 0.2–20 s with
+    separate LOW and HIGH DECAY multipliers (lows ring longer, highs darken), pre-delay, size, diffusion, modulation, early
+    reflections level, low cut / high cut, width and mix. Stable at any setting; the tail rings out when switched off.
+
+  These are original algorithms built to the standard of top studio rack units; they are not copies of any manufacturer's
+  products.
 - **Amp-head UI.** Resizable, vector-drawn: tolex and brushed metal, chicken-head and knurled knobs, pilot light, a glowing ring and
   slot lamps showing which two slots are blending, CPU meter. Drag `.nam` files onto slots (several fill the following slots) and IRs
   onto IR A / B, or anywhere on the faceplate.

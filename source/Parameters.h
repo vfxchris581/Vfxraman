@@ -48,6 +48,21 @@ inline const juce::String rvbDecay    = "reverbDecay";
 inline const juce::String rvbPre      = "reverbPreDelay";
 inline const juce::String rvbTone     = "reverbTone";
 inline const juce::String rvbMix      = "reverbMix";
+// studio units (parameter version 5)
+inline const juce::String dlyMode     = "delayMode";
+inline const juce::String dlyLowCut   = "delayLowCut";
+inline const juce::String dlyModDepth = "delayModDepth";
+inline const juce::String dlyModRate  = "delayModRate";
+inline const juce::String dlyDuck     = "delayDuck";
+inline const juce::String dlyDiff     = "delayDiffusion";
+inline const juce::String rvbProgram  = "reverbProgram";
+inline const juce::String rvbDiff     = "reverbDiffusion";
+inline const juce::String rvbMod      = "reverbMod";
+inline const juce::String rvbLowRT    = "reverbLowRT";
+inline const juce::String rvbHighRT   = "reverbHighRT";
+inline const juce::String rvbEarly    = "reverbEarly";
+inline const juce::String rvbLowCut   = "reverbLowCut";
+inline const juce::String rvbWidth    = "reverbWidth";
 
 /** Delay note divisions (for tempo sync) and their length in beats. */
 inline const juce::StringArray& delayDivisionNames()
@@ -142,7 +157,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterChoice> (pid2 (dlyDiv), "Delay Division", delayDivisionNames(), 3));
     layout.add (std::make_unique<AudioParameterFloat> (pid2 (dlyFeedback), "Delay Feedback", NormalisableRange<float> (0.0f, 0.95f, 0.001f), 0.35f, pctAttr));
     layout.add (std::make_unique<AudioParameterFloat> (pid2 (dlyMix), "Delay Mix", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.3f, pctAttr));
-    layout.add (std::make_unique<AudioParameterFloat> (pid2 (dlyTone), "Delay Tone", NormalisableRange<float> (800.0f, 20000.0f, 1.0f, 0.35f), 6000.0f, hzAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid2 (dlyTone), "Delay High Cut", NormalisableRange<float> (800.0f, 20000.0f, 1.0f, 0.35f), 12000.0f, hzAttr));
     layout.add (std::make_unique<AudioParameterBool> (pid2 (dlyPing), "Delay Ping-Pong", false));
 
     layout.add (std::make_unique<AudioParameterBool> (pid2 (rvbOn), "Reverb", false));
@@ -150,11 +165,29 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbDecay), "Reverb Decay", NormalisableRange<float> (0.2f, 20.0f, 0.01f, 0.4f), 2.2f,
         AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (v, v < 10.0f ? 1 : 0) + " s"; })));
     layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbPre), "Reverb Pre-Delay", NormalisableRange<float> (0.0f, 250.0f, 0.1f, 0.5f), 20.0f, msAttr));
-    layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbTone), "Reverb Tone", NormalisableRange<float> (1000.0f, 18000.0f, 1.0f, 0.4f), 7000.0f, hzAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbTone), "Reverb High Cut", NormalisableRange<float> (1000.0f, 20000.0f, 1.0f, 0.4f), 9000.0f, hzAttr));
     layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbMix), "Reverb Mix", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.25f, pctAttr));
 
     for (int k = 0; k < 10; ++k)
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { slotIr (k), 3 }, "Slot " + String (k + 1) + " IR", true));
+    auto pid5 = [] (const String& id) { return ParameterID { id, 5 }; };
+    auto multAttr = AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return "x" + String (v, 2); });
+    layout.add (std::make_unique<AudioParameterChoice> (pid5 (dlyMode), "Delay Mode", StringArray { "Digital", "Tape", "Analog", "Mod", "Reverse", "Dual" }, 0));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (dlyLowCut), "Delay Low Cut", NormalisableRange<float> (20.0f, 1000.0f, 1.0f, 0.4f), 60.0f, hzAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (dlyModDepth), "Delay Mod Depth", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.15f, pctAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (dlyModRate), "Delay Mod Rate", NormalisableRange<float> (0.05f, 10.0f, 0.01f, 0.4f), 0.6f,
+        AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (v, 2) + " Hz"; })));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (dlyDuck), "Delay Ducking", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.0f, pctAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (dlyDiff), "Delay Diffusion", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.0f, pctAttr));
+    layout.add (std::make_unique<AudioParameterChoice> (pid5 (rvbProgram), "Reverb Program", StringArray { "Ambience", "Room", "Chamber", "Hall", "Plate", "Cathedral" }, 3));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (rvbDiff), "Reverb Diffusion", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.75f, pctAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (rvbMod), "Reverb Modulation", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.35f, pctAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (rvbLowRT), "Reverb Low Decay", NormalisableRange<float> (0.5f, 2.0f, 0.01f), 1.1f, multAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (rvbHighRT), "Reverb High Decay", NormalisableRange<float> (0.1f, 1.0f, 0.01f), 0.5f, multAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (rvbEarly), "Reverb Early", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.5f, pctAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (rvbLowCut), "Reverb Low Cut", NormalisableRange<float> (20.0f, 1000.0f, 1.0f, 0.4f), 80.0f, hzAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid5 (rvbWidth), "Reverb Width", NormalisableRange<float> (0.0f, 1.5f, 0.001f), 1.0f, pctAttr));
+
     for (int k = 0; k < 2; ++k)
     {
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { pedalOn (k), 4 }, "Pedal " + String (k + 1), true));

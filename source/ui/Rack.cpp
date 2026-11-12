@@ -20,13 +20,6 @@ float paramValue (VFXAampsProcessor& p, const String& id)
     return v != nullptr ? v->load() : 0.0f;
 }
 
-const char* roomName (float size)
-{
-    if (size < 0.25f) return "ROOM";
-    if (size < 0.5f) return "STUDIO";
-    if (size < 0.78f) return "HALL";
-    return "CATHEDRAL";
-}
 } // namespace
 
 //==============================================================================
@@ -185,6 +178,48 @@ void RackUnit::setupButton (TextButton& b, std::unique_ptr<ButtonAttachment>& at
     if (auto* prm = proc.apvts.getParameter (paramId)) b.setTooltip (prm->getName (64));
     addAndMakeVisible (b);
     att = std::make_unique<ButtonAttachment> (proc.apvts, paramId, b);
+}
+
+void RackUnit::setupChoiceButtons (TextButton* buttons, int count, const String& paramId, const StringArray& labels)
+{
+    for (int i = 0; i < count; ++i)
+    {
+        auto& b = buttons[i];
+        b.setButtonText (labels[i]);
+        b.getProperties().set ("rack", true);
+        b.getProperties().set ("radio", true);
+        b.getProperties().set ("accent", (int64) accent.getARGB());
+        b.onClick = [this, paramId, i]
+        {
+            if (auto* prm = proc.apvts.getParameter (paramId)) prm->setValueNotifyingHost (prm->convertTo0to1 (static_cast<float> (i)));
+        };
+        addAndMakeVisible (b);
+    }
+    updateChoiceButtons (buttons, count, paramId);
+}
+
+void RackUnit::updateChoiceButtons (TextButton* buttons, int count, const String& paramId)
+{
+    const int v = roundToInt (paramValue (proc, paramId));
+    for (int i = 0; i < count; ++i) buttons[i].setToggleState (i == v, dontSendNotification);
+}
+
+void RackUnit::layoutGrid (std::initializer_list<Component*> row1, std::initializer_list<Component*> row2)
+{
+    // six columns from x 506; knobs 54 px, rows centred at y 46 and 118
+    auto place = [] (std::initializer_list<Component*> row, int cy)
+    {
+        int c = 0;
+        for (auto* comp : row)
+        {
+            const Point<int> centre { 559 + c * 107, cy };
+            if (dynamic_cast<Slider*> (comp) != nullptr) comp->setBounds (Rectangle<int> (54, 54).withCentre (centre));
+            else comp->setBounds (Rectangle<int> (100, 26).withCentre (centre));
+            ++c;
+        }
+    };
+    place (row1, 46);
+    place (row2, 118);
 }
 
 void RackUnit::drawCaptions (Graphics& g, std::initializer_list<Knob*> knobs) const
@@ -410,45 +445,56 @@ void EqUnit::paintPanel (Graphics& g)
 }
 
 //==============================================================================
-DelayUnit::DelayUnit (VFXAampsProcessor& p) : RackUnit (p, "VX-D2", "STEREO DELAY", Colour (0xff17181c), Colour (0xff23ded9))
+DelayUnit::DelayUnit (VFXAampsProcessor& p) : RackUnit (p, "VX-D8", "STUDIO MULTI-DELAY", Colour (0xff16171b), Colour (0xff23ded9))
 {
     powerAtt = std::make_unique<ButtonAttachment> (proc.apvts, P::dlyOn, power);
     power.setTooltip ("Delay on/off (repeats ring out when switched off)");
     setupKnob (time, P::dlyTime, "TIME");
     setupKnob (division, P::dlyDiv, "NOTE");
     setupKnob (feedback, P::dlyFeedback, "FEEDBACK");
-    setupKnob (tone, P::dlyTone, "TONE");
+    setupKnob (diffusion, P::dlyDiff, "DIFFUSION");
     setupKnob (mix, P::dlyMix, "MIX");
+    setupKnob (lowCut, P::dlyLowCut, "LOW CUT");
+    setupKnob (highCut, P::dlyTone, "HIGH CUT");
+    setupKnob (modDepth, P::dlyModDepth, "MOD");
+    setupKnob (modRate, P::dlyModRate, "RATE");
+    setupKnob (duck, P::dlyDuck, "DUCK");
     setupButton (sync, syncAtt, P::dlySync);
     setupButton (ping, pingAtt, P::dlyPing);
     sync.setTooltip ("Sync the delay time to the host tempo (set the note value with NOTE)");
+    duck.slider.setTooltip ("Ducking: the repeats get quieter while you play and swell back when you stop");
+    diffusion.slider.setTooltip ("Diffusion: smears each repeat into an ambient wash");
+    setupChoiceButtons (modes.data(), 6, P::dlyMode, { "DIGITAL", "TAPE", "ANALOG", "MOD", "REVERSE", "DUAL" });
+    modes[0].setTooltip ("Digital: pristine repeats");
+    modes[1].setTooltip ("Tape: wow and flutter, saturation, repeats darken as they fade");
+    modes[2].setTooltip ("Analog: warm, dark bucket-brigade style repeats");
+    modes[3].setTooltip ("Mod: chorused repeats (MOD / RATE)");
+    modes[4].setTooltip ("Reverse: each stretch of playing comes back backwards");
+    modes[5].setTooltip ("Dual: left at the set time, right at 1.5x for a rhythmic spread");
 }
 
-Rectangle<float> DelayUnit::screen() const { return { 270.0f, 20.0f, 214.0f, static_cast<float> (getHeight()) - 40.0f }; }
+Rectangle<float> DelayUnit::screen() const { return { 270.0f, 14.0f, 214.0f, 78.0f }; }
 
 void DelayUnit::resized()
 {
     layoutPowerButton();
-    int x = 548;
-    for (auto* k : { &time, &division, &feedback, &tone, &mix })
-    {
-        k->slider.setBounds (Rectangle<int> (66, 66).withCentre ({ x, 52 }));
-        x += 96;
-    }
-    sync.setBounds (1018, 30, 104, 26);
-    ping.setBounds (1018, 70, 104, 26);
+    for (int i = 0; i < 6; ++i)
+        modes[static_cast<size_t> (i)].setBounds (270 + (i % 3) * 73, 102 + (i / 3) * 28, 68, 23);
+    layoutGrid ({ &time.slider, &division.slider, &feedback.slider, &diffusion.slider, &mix.slider, &sync },
+                { &lowCut.slider, &highCut.slider, &modDepth.slider, &modRate.slider, &duck.slider, &ping });
 }
 
 void DelayUnit::tick()
 {
+    updateChoiceButtons (modes.data(), 6, P::dlyMode);
     const bool synced = sync.getToggleState();
     time.slider.setEnabled (! synced);
     division.slider.setEnabled (synced);
     const float ms = proc.getDelayTimeMs();
     String text;
-    if (synced) text << "SYNC|" << P::delayDivisionNames()[static_cast<int> (paramValue (proc, P::dlyDiv))] << "|" << String (roundToInt (ms)) << " ms";
-    else text << "MS|" << String (ms, ms < 100.0f ? 1 : 0);
-    text << "|" << String (roundToInt (paramValue (proc, P::dlyFeedback) * 100.0f)) << "|" << (isOn() ? 1 : 0) << (ping.getToggleState() ? 1 : 0);
+    text << (synced ? "S" : "M") << String (ms, 1) << "|" << roundToInt (paramValue (proc, P::dlyDiv)) << "|"
+         << roundToInt (paramValue (proc, P::dlyFeedback) * 100.0f) << "|" << roundToInt (paramValue (proc, P::dlyMode))
+         << (isOn() ? 1 : 0) << (ping.getToggleState() ? 1 : 0);
     if (text != shownText) { shownText = text; repaint(); }
 }
 
@@ -456,45 +502,56 @@ void DelayUnit::paintPanel (Graphics& g)
 {
     const bool synced = sync.getToggleState();
     const float ms = proc.getDelayTimeMs();
+    const String mode = vfxa::StudioDelay::modeName (roundToInt (paramValue (proc, P::dlyMode)));
     const String fb = "FB " + String (roundToInt (paramValue (proc, P::dlyFeedback) * 100.0f)) + "%";
     if (synced)
-        drawDisplay (g, screen(), P::delayDivisionNames()[static_cast<int> (paramValue (proc, P::dlyDiv))], "",
-                     "SYNC  " + String (roundToInt (ms)) + " ms  " + fb, isOn());
+        drawDisplay (g, screen(), P::delayDivisionNames()[roundToInt (paramValue (proc, P::dlyDiv))], "",
+                     mode + "  SYNC " + String (roundToInt (ms)) + " ms", isOn());
     else
-        drawDisplay (g, screen(), String (ms, ms < 100.0f ? 1 : 0), "ms", (ping.getToggleState() ? String ("PING-PONG  ") : String()) + fb, isOn());
-    drawCaptions (g, { &time, &division, &feedback, &tone, &mix });
+        drawDisplay (g, screen(), String (ms, ms < 100.0f ? 1 : 0), "ms", mode + "  " + (ping.getToggleState() ? String ("P-P ") : String()) + fb, isOn());
+    drawCaptions (g, { &time, &division, &feedback, &diffusion, &mix, &lowCut, &highCut, &modDepth, &modRate, &duck });
 }
 
 //==============================================================================
-ReverbUnit::ReverbUnit (VFXAampsProcessor& p) : RackUnit (p, "VX-R8", "STEREO REVERB", Colour (0xff15214a), Colour (0xff7d8dff))
+ReverbUnit::ReverbUnit (VFXAampsProcessor& p) : RackUnit (p, "VX-R16", "STUDIO REVERB", Colour (0xff15214a), Colour (0xff7d8dff))
 {
     powerAtt = std::make_unique<ButtonAttachment> (proc.apvts, P::rvbOn, power);
     power.setTooltip ("Reverb on/off (the tail rings out when switched off)");
-    setupKnob (size, P::rvbSize, "SIZE");
     setupKnob (decay, P::rvbDecay, "DECAY");
     setupKnob (preDelay, P::rvbPre, "PRE-DELAY");
-    setupKnob (tone, P::rvbTone, "TONE");
+    setupKnob (size, P::rvbSize, "SIZE");
+    setupKnob (diffusion, P::rvbDiff, "DIFFUSION");
+    setupKnob (mod, P::rvbMod, "MOD");
     setupKnob (mix, P::rvbMix, "MIX");
+    setupKnob (lowRT, P::rvbLowRT, "LOW DECAY");
+    setupKnob (highRT, P::rvbHighRT, "HIGH DECAY");
+    setupKnob (early, P::rvbEarly, "EARLY");
+    setupKnob (lowCut, P::rvbLowCut, "LOW CUT");
+    setupKnob (highCut, P::rvbTone, "HIGH CUT");
+    setupKnob (width, P::rvbWidth, "WIDTH");
+    lowRT.slider.setTooltip ("Low decay: how long the lows ring, as a multiple of DECAY");
+    highRT.slider.setTooltip ("High decay: how long the highs ring, as a multiple of DECAY (lower = darker tail)");
+    early.slider.setTooltip ("Early reflections level (the room's first bounces)");
+    setupChoiceButtons (programs.data(), 6, P::rvbProgram, { "AMBIENCE", "ROOM", "CHAMBER", "HALL", "PLATE", "CATHEDRAL" });
 }
 
-Rectangle<float> ReverbUnit::screen() const { return { 270.0f, 20.0f, 214.0f, static_cast<float> (getHeight()) - 40.0f }; }
+Rectangle<float> ReverbUnit::screen() const { return { 270.0f, 14.0f, 214.0f, 78.0f }; }
 
 void ReverbUnit::resized()
 {
     layoutPowerButton();
-    int x = 548;
-    for (auto* k : { &size, &decay, &preDelay, &tone, &mix })
-    {
-        k->slider.setBounds (Rectangle<int> (66, 66).withCentre ({ x, 52 }));
-        x += 96;
-    }
+    for (int i = 0; i < 6; ++i)
+        programs[static_cast<size_t> (i)].setBounds (270 + (i % 3) * 73, 102 + (i / 3) * 28, 68, 23);
+    layoutGrid ({ &decay.slider, &preDelay.slider, &size.slider, &diffusion.slider, &mod.slider, &mix.slider },
+                { &lowRT.slider, &highRT.slider, &early.slider, &lowCut.slider, &highCut.slider, &width.slider });
 }
 
 void ReverbUnit::tick()
 {
+    updateChoiceButtons (programs.data(), 6, P::rvbProgram);
     String text;
-    text << String (paramValue (proc, P::rvbDecay), 1) << "|" << roomName (paramValue (proc, P::rvbSize)) << "|"
-         << roundToInt (paramValue (proc, P::rvbPre)) << "|" << (isOn() ? 1 : 0);
+    text << String (paramValue (proc, P::rvbDecay), 1) << "|" << roundToInt (paramValue (proc, P::rvbProgram)) << "|"
+         << roundToInt (paramValue (proc, P::rvbPre)) << "|" << roundToInt (paramValue (proc, P::rvbSize) * 100.0f) << "|" << (isOn() ? 1 : 0);
     if (text != shownText) { shownText = text; repaint (screen().toNearestInt().expanded (2)); }
 }
 
@@ -502,22 +559,9 @@ void ReverbUnit::paintPanel (Graphics& g)
 {
     const float dec = paramValue (proc, P::rvbDecay);
     drawDisplay (g, screen(), String (dec, dec < 10.0f ? 1 : 0), "s",
-                 String (roomName (paramValue (proc, P::rvbSize))) + "  PRE " + String (roundToInt (paramValue (proc, P::rvbPre))) + " ms", isOn());
-    drawCaptions (g, { &size, &decay, &preDelay, &tone, &mix });
-
-    // vents
-    const float vx = 1020.0f;
-    for (int i = 0; i < 7; ++i)
-    {
-        const auto v = Rectangle<float> (vx + i * 15.0f, 26.0f, 6.0f, static_cast<float> (getHeight()) - 52.0f);
-        g.setColour (Colour (0xff05070f));
-        g.fillRoundedRectangle (v, 3.0f);
-        g.setColour (Colour (0x26ffffff));
-        g.drawLine (v.getX() + 1.0f, v.getBottom() + 0.6f, v.getRight() - 1.0f, v.getBottom() + 0.6f, 0.7f);
-    }
-    g.setFont (AmpLookAndFeel::labelFont (9.0f));
-    g.setColour (kTextDim);
-    g.drawText ("8-LINE FDN", Rectangle<float> (vx - 4.0f, static_cast<float> (getHeight()) - 24.0f, 110.0f, 14.0f), Justification::centred);
+                 String (vfxa::StudioReverb::programName (roundToInt (paramValue (proc, P::rvbProgram))))
+                     + "  PRE " + String (roundToInt (paramValue (proc, P::rvbPre))) + " ms", isOn());
+    drawCaptions (g, { &decay, &preDelay, &size, &diffusion, &mod, &mix, &lowRT, &highRT, &early, &lowCut, &highCut, &width });
 }
 
 //==============================================================================
@@ -532,8 +576,8 @@ Rack::Rack (VFXAampsProcessor& p) : eq (p), delay (p), reverb (p)
 void Rack::resized()
 {
     eq.setBounds (14, 10, kWidth - 28, 150);
-    delay.setBounds (14, 164, kWidth - 28, 128);
-    reverb.setBounds (14, 296, kWidth - 28, 128);
+    delay.setBounds (14, 164, kWidth - 28, 164);
+    reverb.setBounds (14, 332, kWidth - 28, 164);
 }
 
 void Rack::tick()

@@ -281,6 +281,15 @@ void AmpLookAndFeel::drawButtonBackground (Graphics& g, Button& b, const Colour&
 
 void AmpLookAndFeel::drawButtonText (Graphics& g, TextButton& b, bool highlighted, bool)
 {
+    if (b.getProperties().getWithDefault ("radio", false))
+    {
+        // selector button: the whole cap lights when selected, label uses the full width
+        g.setFont (labelFont (jmin (10.0f, b.getHeight() * 0.45f)).withExtraKerningFactor (0.04f));
+        const auto accent = Colour (static_cast<uint32> (static_cast<int64> (b.getProperties().getWithDefault ("accent", (int64) 0xff23ded9))));
+        g.setColour (b.getToggleState() ? accent.brighter (0.7f) : Colour (highlighted ? 0xffffffff : 0xffaab1be));
+        g.drawFittedText (b.getButtonText(), b.getLocalBounds().reduced (3, 0), Justification::centred, 1, 0.8f);
+        return;
+    }
     if (b.getProperties().getWithDefault ("rack", false))
     {
         // label sits right of the LED
@@ -434,6 +443,29 @@ void AmpLookAndFeel::drawRackKnob (Graphics& g, Rectangle<float> r, float start,
 
 void AmpLookAndFeel::drawRackButton (Graphics& g, Button& b, bool highlighted, bool down)
 {
+    if (b.getProperties().getWithDefault ("radio", false))
+    {
+        const auto acc = Colour (static_cast<uint32> (static_cast<int64> (b.getProperties().getWithDefault ("accent", (int64) 0xff23ded9))));
+        auto r = b.getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (Colour (0xff050506));
+        g.fillRoundedRectangle (r, 3.0f);
+        auto cap = r.reduced (1.5f).translated (0.0f, down ? 0.8f : 0.0f);
+        const bool on = b.getToggleState();
+        g.setGradientFill (ColourGradient (on ? acc.withMultipliedBrightness (0.55f) : Colour (down ? 0xff23252a : 0xff34373e), cap.getTopLeft(),
+                                           on ? acc.withMultipliedBrightness (0.28f) : Colour (0xff17181c), cap.getBottomLeft(), false));
+        g.fillRoundedRectangle (cap, 3.0f);
+        if (on)
+        {
+            g.setColour (acc.withAlpha (0.55f));
+            g.drawRoundedRectangle (cap, 3.0f, 1.0f);
+        }
+        else
+        {
+            g.setColour (Colour (highlighted ? 0x50ffffff : 0x22ffffff));
+            g.drawRoundedRectangle (cap, 3.0f, 0.8f);
+        }
+        return;
+    }
     const auto accent = Colour (static_cast<uint32> (static_cast<int64> (b.getProperties().getWithDefault ("accent", (int64) 0xff23ded9))));
     auto r = b.getLocalBounds().toFloat().reduced (0.5f);
     const float corner = 3.0f;
