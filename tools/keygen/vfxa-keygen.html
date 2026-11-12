@@ -78,7 +78,7 @@
 window.addEventListener("error", e => { const el = document.getElementById("keystatus"); if (el) { el.textContent = "Error: " + e.message; el.className = "status bad"; } });
 // Public key built into the plug-in (source/License.cpp). Used to confirm the private key matches it.
 const PUBLIC_E = 0x10001n;
-const PUBLIC_N = BigInt("0xc271947d776a0c6f93ad5eb9ec4cc46e91ca0a7e830de92b303358e8ef5ec5bcaeb9a16489e92f84e681a1ea077c748607716b9b8d1e8be5348e4ade25d5cf0e2f3fd7fcb6d8349747f9d1e79fbcfa08f612d730c667c253f6667315703a3d7baf0a2e1937312714e0572ec33d6d65ec956ef6f6ed6c6b2468063235b0b25443c8363cca156061ffef012edf5b5b1624d46c0862e326ceeddeadabcf9f9a3eb50800d19265002dd3c9ebca54f36b18bd3a202dd592a1a19c4c7d16faabb611aa72fde4ab3bf3ab2f1a06001a21702fefba4304895d44fa446e198385544b8a3598a544e06c9a4e67adf04654437057dbb99e92754b8e23b0033b908e6f5921a7");
+const PUBLIC_N = BigInt("0xb3bee2b75d9c1302696c79af6cfef08d423cfa0620b45998f2ecb3629ce0f64f752f4acc1ca675946eec89a80311a3e09ec16acf181eb2727776122d815472bc97c2e904884a51d063815da1b85d0cb9be566b9c001da84be2618526e8ed797dc928773014545ec61c1483a63c2198a9705730832aa238b761b1163a8b2995136202b2f5c5159d7458e44edc651efb7991c2e69d1371aff1c549dfe84122a05a8f5ad64a1adc85cb970788ac1407ec90500881aeb5a9e332e9be056668ad67e1e54d6a89c52a651f42e266594f1ee8036546ed50d28ceb1f807f2b7aa1ce06d115b8550cb5a3be72b225dc72871ef2e8ea3d2ae853477af1cdce5cb3d4a86c15");
 const PRODUCT = "VFXAamps";
 
 // ---- SHA-256 (plain JS so it also works when this page is opened from disk) ----

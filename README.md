@@ -71,12 +71,12 @@ asks for a license key; a valid key unlocks it permanently on that computer (key
 machine, so a customer can use theirs on all their computers). The header shows *Trial · N days left* until then, and
 *Licensed to …* afterwards.
 
-**Making keys:** open `tools/keygen/vfxa-keygen.html` in a browser (it works offline), load your private key file
-`vfxaamps-private.key`, type the customer's name or email and click *Generate key*. Send them the key; they paste it into
+**Making keys:** open your private `VFXAamps-Keygen-PRIVATE.html` in a browser (it has your signing key built in and works
+offline), or open `tools/keygen/vfxa-keygen.html` and load or paste your private key, then type the customer's name or email and click *Generate key*. Send them the key; they paste it into
 VFXAamps. The page can also check any key and show who it was made for.
 
 Keys are RSA-2048 signatures. The plug-in holds only the public key, so it can check keys but not make them.
-**Keep `vfxaamps-private.key` private and backed up**: anyone with it can make keys, and without it you can't make keys for
+**Keep your private key file and `VFXAamps-Keygen-PRIVATE.html` private and backed up**: anyone with it can make keys, and without it you can't make keys for
 this build. It's excluded from git (`*.key`). If it is ever lost or leaked, a new key pair can be made — but the public key
 in `source/License.cpp` then changes, and keys made with the old private key stop working in new builds.
 

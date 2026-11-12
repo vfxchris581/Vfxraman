@@ -11,3 +11,5 @@ CMakeUserPresets.json
 
 # License signing keys: never commit the private key
 *.key
+*PRIVATE*
+*private-key*
