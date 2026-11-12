@@ -55,6 +55,8 @@ private:
     const int slot;
     Knob trim;
     juce::TextButton loadButton { "LOAD" }, clearButton { juce::String::fromUTF8 ("\xc3\x97") };
+    juce::TextButton irButton { "IR" };            // use the dual IR (cab) while this slot plays
+    std::unique_ptr<ButtonAttachment> irAtt;
     VFXAampsProcessor::AssetStatus status;
     float level = 0.0f;
     bool dragOver = false;

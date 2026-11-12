@@ -44,6 +44,7 @@ VFXAampsProcessor::VFXAampsProcessor()
     pRvbDecay = param (apvts, P::rvbDecay);   pRvbPre = param (apvts, P::rvbPre);
     pRvbTone = param (apvts, P::rvbTone);     pRvbMix = param (apvts, P::rvbMix);
     for (int k = 0; k < vfxa::kNumSlots; ++k) pSlotTrim[static_cast<size_t> (k)] = param (apvts, P::slotTrim (k));
+    for (int k = 0; k < vfxa::kNumSlots; ++k) { pSlotIr[static_cast<size_t> (k)] = param (apvts, P::slotIr (k)); pendingSlotIr[static_cast<size_t> (k)].store (0); }
     for (int w = 0; w < kNumIrs; ++w)
         pIr[static_cast<size_t> (w)] = { param (apvts, P::ir (w, "on")),    param (apvts, P::ir (w, "level")),
                                          param (apvts, P::ir (w, "pan")),   param (apvts, P::ir (w, "phase")),
@@ -147,9 +148,18 @@ int VFXAampsProcessor::computeLatency() const noexcept
     return l;
 }
 
+void VFXAampsProcessor::applyPendingSlotIrSwitches()
+{
+    for (int k = 0; k < vfxa::kNumSlots; ++k)
+        if (const int want = pendingSlotIr[static_cast<size_t> (k)].exchange (0); want != 0)
+            if (auto* prm = apvts.getParameter (vfxa::params::slotIr (k)))
+                prm->setValueNotifyingHost (want == 1 ? 1.0f : 0.0f);
+}
+
 void VFXAampsProcessor::timerCallback()
 {
     engine.collectGarbage();
+    applyPendingSlotIrSwitches();
     const int l = latencyWanted.load();
     if (l != getLatencySamples()) setLatencySamples (l);
 }
@@ -295,7 +305,19 @@ void VFXAampsProcessor::processChunk (int n) noexcept
         ip[w].lowCutHz = p.lowcut->load();
         ip[w].highCutHz = p.highcut->load();
     }
-    irs.process (x, l, r, n, pIrOn->load() > 0.5f, pIrBlend->load(), ip[0], ip[1]);
+    // Each slot's IR switch: the cab amount follows the morph (power share of the slots now playing).
+    double slotIrAmount = 1.0;
+    {
+        double total = 0.0, withIr = 0.0;
+        for (int k = 0; k < vfxa::kNumSlots; ++k)
+        {
+            const double g = engine.slotLevel (k);
+            total += g * g;
+            if (pSlotIr[static_cast<size_t> (k)]->load (std::memory_order_relaxed) > 0.5f) withIr += g * g;
+        }
+        if (total > 1e-9) slotIrAmount = withIr / total; // no model loaded: the dry input still goes through the IR
+    }
+    irs.process (x, l, r, n, pIrOn->load() > 0.5f, pIrBlend->load(), ip[0], ip[1], slotIrAmount);
 
     // --- effects rack: graphic EQ -> delay -> reverb ----------------------------------------
     {
@@ -443,7 +465,7 @@ bool VFXAampsProcessor::waitForLoads (int timeoutMs)
     return true;
 }
 
-void VFXAampsProcessor::loadAsset (int asset, const juce::File& file)
+void VFXAampsProcessor::loadAsset (int asset, const juce::File& file, bool fromUser)
 {
     if (asset < 0 || asset >= kNumAssets) return;
     const int id = ++requestId[static_cast<size_t> (asset)];
@@ -458,7 +480,7 @@ void VFXAampsProcessor::loadAsset (int asset, const juce::File& file)
     });
     getSettings().setValue (model ? "lastModelDir" : "lastIrDir", file.getParentDirectory().getFullPathName());
 
-    loaderPool.addJob ([this, asset, file, id, model]
+    loaderPool.addJob ([this, asset, file, id, model, fromUser]
     {
         auto stale = [&] { return requestId[static_cast<size_t> (asset)].load() != id; };
         if (model)
@@ -478,6 +500,13 @@ void VFXAampsProcessor::loadAsset (int asset, const juce::File& file)
             if (load.info.sampleRate > 0) detail.add (juce::String (load.info.sampleRate / 1000.0, load.info.sampleRate == 44100.0 ? 1 : 0) + " kHz");
             if (load.info.gearName().size() > 0) detail.add (juce::String (load.info.gearName()));
             const auto detailText = detail.joinIntoString ("  ");
+            if (fromUser)
+            {
+                // NAM gear types: amp, pedal, pedal_amp, preamp (no cab) / amp_cab, amp_pedal_cab, studio (cab included)
+                const juce::String gear = juce::String (load.info.gearType).toLowerCase();
+                if (gear.contains ("cab") || gear == "studio") pendingSlotIr[static_cast<size_t> (asset)].store (2);
+                else if (gear.isNotEmpty()) pendingSlotIr[static_cast<size_t> (asset)].store (1);
+            }
             engine.setSlot (asset, std::move (load));
             setStatus (asset, [&] (AssetStatus& s) { s.loading = false; s.loaded = true; s.name = name; s.detail = detailText; s.path = file.getFullPathName(); });
         }

@@ -86,8 +86,9 @@ public:
     /** Audio thread: mono in -> stereo out. */
     bool isReady (int which) const noexcept { return which == 0 ? a.isReady() : b.isReady(); }
 
+    /** amount: how much of the IR'd signal to use (0 = dry amp, 1 = full cab) - follows the slots' IR switches. */
     void process (const float* in, float* outL, float* outR, int n,
-                  bool globalOn, float blend, const IrParams& pa, const IrParams& pb) noexcept;
+                  bool globalOn, float blend, const IrParams& pa, const IrParams& pb, double amount = 1.0) noexcept;
 
 private:
     IrChannel a, b;

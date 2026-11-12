@@ -25,6 +25,8 @@ inline const juce::String limiter    = "limiter";
 inline const juce::String oversample = "oversampling";
 
 inline juce::String slotTrim (int slot) { return "slotTrim" + juce::String (slot + 1); }
+/** Per-slot cab switch (parameter version 3): use the dual IR while this slot is playing. */
+inline juce::String slotIr (int slot) { return "slotIr" + juce::String (slot + 1); }
 
 // Effects rack (added in parameter version 2)
 inline const juce::String eqOn        = "eqOn";
@@ -147,6 +149,9 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbPre), "Reverb Pre-Delay", NormalisableRange<float> (0.0f, 250.0f, 0.1f, 0.5f), 20.0f, msAttr));
     layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbTone), "Reverb Tone", NormalisableRange<float> (1000.0f, 18000.0f, 1.0f, 0.4f), 7000.0f, hzAttr));
     layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbMix), "Reverb Mix", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.25f, pctAttr));
+
+    for (int k = 0; k < 10; ++k)
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { slotIr (k), 3 }, "Slot " + String (k + 1) + " IR", true));
     return layout;
 }
 

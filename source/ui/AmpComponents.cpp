@@ -57,7 +57,7 @@ void chooseAndLoad (VFXAampsProcessor& proc, int asset, std::unique_ptr<FileChoo
                          [&proc, asset] (const FileChooser& fc)
                          {
                              const auto f = fc.getResult();
-                             if (f.existsAsFile()) proc.loadAsset (asset, f);
+                             if (f.existsAsFile()) proc.loadAsset (asset, f, true);
                          });
 }
 
@@ -72,6 +72,13 @@ SlotCard::SlotCard (VFXAampsProcessor& p, int s) : proc (p), slot (s)
     loadButton.onClick = [this] { chooseAndLoad (proc, slot, chooser); };
     clearButton.onClick = [this] { proc.clearAsset (slot); };
     setTooltip ("Slot " + String (slot + 1) + ": drop .nam files here (several fill the following slots)");
+    irButton.getProperties().set ("rack", true);
+    irButton.getProperties().set ("accent", (int64) colours::amber.getARGB());
+    irButton.setClickingTogglesState (true);
+    irButton.setTooltip ("Slot " + String (slot + 1) + ": use the cab IR while this slot plays. Turn it off for captures that "
+                         "already include a cab (full rig). Set automatically when you load a capture that says which it is.");
+    addAndMakeVisible (irButton);
+    irAtt = std::make_unique<ButtonAttachment> (proc.apvts, vfxa::params::slotIr (slot), irButton);
     refresh();
 }
 
@@ -94,6 +101,7 @@ void SlotCard::setLevel (float l)
 void SlotCard::resized()
 {
     auto r = getLocalBounds().reduced (6);
+    irButton.setBounds (Rectangle<int> (42, 19).withCentre ({ getWidth() / 2 + 1, 18 }));
     auto bottom = r.removeFromBottom (24);
     loadButton.setBounds (bottom.removeFromLeft (bottom.getWidth() - 30).reduced (0, 1));
     clearButton.setBounds (bottom.removeFromRight (26).reduced (0, 1));
@@ -190,7 +198,7 @@ void SlotCard::filesDropped (const StringArray& files, int, int)
     dragOver = false;
     int target = slot;
     for (auto& f : files)
-        if (isModelFile (f) && target < vfxa::kNumSlots) proc.loadAsset (target++, File (f));
+        if (isModelFile (f) && target < vfxa::kNumSlots) proc.loadAsset (target++, File (f), true);
     repaint();
 }
 
@@ -305,7 +313,7 @@ void IrColumn::filesDropped (const StringArray& files, int, int)
 {
     dragOver = false;
     for (auto& f : files)
-        if (isIrFile (f)) { proc.loadAsset (VFXAampsProcessor::irAsset (which), File (f)); break; }
+        if (isIrFile (f)) { proc.loadAsset (VFXAampsProcessor::irAsset (which), File (f), true); break; }
     repaint();
 }
 

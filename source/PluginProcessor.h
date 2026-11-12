@@ -64,7 +64,9 @@ public:
         juce::String detail;    // e.g. "WaveNet  48 kHz  Marshall JCM800"
         bool loading = false, missing = false, loaded = false;
     };
-    void loadAsset (int asset, const juce::File& file);
+    /** fromUser: chosen in the UI (not a session/preset restore). For a model it then sets the slot's IR switch
+        from the capture's gear type: off when the capture already includes a cab, on for an amp-only capture. */
+    void loadAsset (int asset, const juce::File& file, bool fromUser = false);
     void clearAsset (int asset);
     AssetStatus getAssetStatus (int asset) const;
     bool isAnyAssetLoading() const;
@@ -101,6 +103,8 @@ public:
     bool isTunerMuted() const noexcept { return tunerMute.load(); }
     /** Delay time actually in use, in ms (follows the host tempo when synced). */
     float getDelayTimeMs() const noexcept { return delayTimeMs.load (std::memory_order_relaxed); }
+    /** Message thread (normally from the timer): applies slot IR switches set by capture metadata after a load. */
+    void applyPendingSlotIrSwitches();
     float getInputPeak() const noexcept { return inPeak.load (std::memory_order_relaxed); }
 
     juce::AudioProcessorValueTreeState apvts;
@@ -156,6 +160,8 @@ private:
                       * pDlyFb = nullptr, * pDlyMix = nullptr, * pDlyTone = nullptr, * pDlyPing = nullptr,
                       * pRvbOn = nullptr, * pRvbSize = nullptr, * pRvbDecay = nullptr, * pRvbPre = nullptr, * pRvbTone = nullptr, * pRvbMix = nullptr;
     std::array<std::atomic<float>*, vfxa::GraphicEq::kBands> pEqBand {};
+    std::array<std::atomic<float>*, vfxa::kNumSlots> pSlotIr {};
+    std::array<std::atomic<int>, vfxa::kNumSlots> pendingSlotIr {}; // 0 none, 1 set on, 2 set off (message thread applies)
 
     juce::AudioProcessLoadMeasurer loadMeasurer;
     std::atomic<float> outPeak { 0.0f }, inPeak { 0.0f };

@@ -223,13 +223,13 @@ void DualIr::reset()
 }
 
 void DualIr::process (const float* in, float* outL, float* outR, int n,
-                      bool globalOn, float blend, const IrParams& pa, const IrParams& pb) noexcept
+                      bool globalOn, float blend, const IrParams& pa, const IrParams& pb, double amount) noexcept
 {
     const bool aOn = pa.on && a.isReady(), bOn = pb.on && b.isReady();
     // Linear blend (IRs of one cab are coherent). With only one IR active it plays at full level.
     const double wa = aOn && bOn ? 1.0 - blend : (aOn ? 1.0 : 0.0);
     const double wb = aOn && bOn ? blend : (bOn ? 1.0 : 0.0);
-    const double wet = globalOn && (aOn || bOn) ? 1.0 : 0.0;
+    const double wet = globalOn && (aOn || bOn) ? std::clamp (amount, 0.0, 1.0) : 0.0;
     if (first) { weightA.snap (wa); weightB.snap (wb); wetMix.snap (wet); first = false; }
     weightA.setTarget (wa);
     weightB.setTarget (wb);

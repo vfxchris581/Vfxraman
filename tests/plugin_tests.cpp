@@ -442,6 +442,7 @@ static void testEditorSnapshot (const File& outDir)
     setParam (p, P::rvbOn, 1.0f);
     setParam (p, P::rvbDecay, 3.4f);
     setParam (p, P::rvbSize, 0.7f);
+    setParam (p, P::slotIr (1), 0.0f); // show one slot with its IR switched off
     run (p, sine (48000, 0.3, 110.0 * std::pow (2.0, 7.0 / 1200.0)), 256); // slot glow / meters, and A2 +7 cents on the tuner
 
     std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
@@ -532,6 +533,82 @@ static void testEffectsRack()
     p.setTunerMute (false);
 }
 
+//==============================================================================
+static float paramValue (VFXAampsProcessor& p, const juce::String& id) { return p.apvts.getRawParameterValue (id)->load(); }
+
+static File withGearType (const char* model, const char* gearType)
+{
+    auto json = juce::JSON::parse (modelFile (model));
+    if (auto* meta = json.getProperty ("metadata", juce::var()).getDynamicObject()) meta->setProperty ("gear_type", gearType);
+    const auto f = tempDir().getChildFile (juce::String (gearType) + "_" + model);
+    f.replaceWithText (juce::JSON::toString (json, true));
+    return f;
+}
+
+static void testSlotIrSwitches()
+{
+    std::printf ("Per-slot IR switches\n");
+    namespace P = vfxa::params;
+    const double fs = 48000;
+    VFXAampsProcessor p;
+    setParam (p, P::limiter, 0.0f);
+    p.prepareToPlay (fs, 480);
+    p.loadAsset (0, modelFile ("wavenet.nam"));
+    p.loadAsset (1, modelFile ("lstm.nam"));
+    std::vector<float> inv (256, 0.0f); inv[0] = 1.0f;
+    p.loadAsset (VFXAampsProcessor::irAsset (0), writeWav (tempDir().getChildFile ("unity.wav"), inv, fs));
+    p.waitForLoads (20000);
+    waitForIrs (p, { 0 }, fs, 480);
+    setParam (p, P::ir (0, "phase"), 1.0f); // the "cab" is a polarity flip, so IR in / out is easy to tell apart
+    setParam (p, P::morph, 1.0f);
+    const auto x = sine (fs, 1.0, 196.0);
+
+    auto corrWithRef = [&] (const Out& o, const Out& ref)
+    {
+        double c = 0, a = 0, b = 0;
+        for (size_t i = 24000; i < 48000; ++i) { c += o.l[i] * ref.l[i]; a += o.l[i] * o.l[i]; b += ref.l[i] * ref.l[i]; }
+        return c / std::sqrt (a * b + 1e-30);
+    };
+    setParam (p, P::irOn, 0.0f);
+    run (p, x, 480);
+    const auto ref = run (p, x, 480); // slot 1, no cab
+    setParam (p, P::irOn, 1.0f);
+    setParam (p, P::slotIr (0), 1.0f);
+    run (p, x, 480);
+    auto o = run (p, x, 480);
+    CHECK (corrWithRef (o, ref) < -0.99, "slot 1 IR on: cab applied (corr %.3f)", corrWithRef (o, ref));
+    setParam (p, P::slotIr (0), 0.0f);
+    run (p, x, 480);
+    o = run (p, x, 480);
+    CHECK (corrWithRef (o, ref) > 0.99, "slot 1 IR off: no cab (corr %.3f)", corrWithRef (o, ref));
+
+    // sweeping between slot 1 (IR on) and slot 2 (IR off) while playing: smooth
+    setParam (p, P::slotIr (0), 1.0f);
+    setParam (p, P::slotIr (1), 0.0f);
+    const auto sw = sine (fs, 3.0, 110.0, 0.2);
+    o = run (p, sw, 128, [&] (int b, int) { const double t = b * 128.0 / fs; setParam (p, P::morph, static_cast<float> (1.0 + (t < 1.5 ? t / 1.5 : (3.0 - t) / 1.5))); });
+    double step = 0, natural = 0;
+    for (size_t i = 1; i < o.l.size(); ++i) step = std::max (step, (double) std::fabs (o.l[i] - o.l[i - 1]));
+    for (size_t i = 24001; i < 48000; ++i) natural = std::max (natural, (double) std::fabs (ref.l[i] - ref.l[i - 1]));
+    CHECK (step < natural * 2.5 + 0.01, "morphing between an IR-on and an IR-off slot is click-free (max step %.4f, plain %.4f)", step, natural);
+
+    // loading from the UI sets the switch from the capture's gear type; a restore never does
+    setParam (p, P::slotIr (2), 1.0f);
+    p.loadAsset (2, withGearType ("wavenet.nam", "amp_cab"), true);
+    p.waitForLoads (20000);
+    p.applyPendingSlotIrSwitches();
+    CHECK (paramValue (p, P::slotIr (2)) < 0.5f, "amp + cab capture: slot IR switched off");
+    p.loadAsset (2, withGearType ("wavenet.nam", "amp"), true);
+    p.waitForLoads (20000);
+    p.applyPendingSlotIrSwitches();
+    CHECK (paramValue (p, P::slotIr (2)) > 0.5f, "amp-only capture: slot IR switched on");
+    setParam (p, P::slotIr (3), 1.0f);
+    p.loadAsset (3, withGearType ("lstm.nam", "studio"));
+    p.waitForLoads (20000);
+    p.applyPendingSlotIrSwitches();
+    CHECK (paramValue (p, P::slotIr (3)) > 0.5f, "session/preset restore leaves the slot IR switch alone");
+}
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -542,6 +619,7 @@ int main (int argc, char** argv)
     testMorphThroughProcessor();
     testStateAndPresets();
     testEffectsRack();
+    testSlotIrSwitches();
     testEditorSnapshot (shots);
     std::printf ("\n%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

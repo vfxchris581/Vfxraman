@@ -561,12 +561,12 @@ void AmpFace::filesDropped (const StringArray& files, int, int)
         if (isModelFile (f))
         {
             while (nextSlot < vfxa::kNumSlots && (proc.getAssetStatus (nextSlot).loaded || proc.getAssetStatus (nextSlot).loading)) ++nextSlot;
-            if (nextSlot < vfxa::kNumSlots) proc.loadAsset (nextSlot++, File (f));
+            if (nextSlot < vfxa::kNumSlots) proc.loadAsset (nextSlot++, File (f), true);
         }
         else if (isIrFile (f))
         {
             const int a = proc.getAssetStatus (VFXAampsProcessor::irAsset (0)).loaded ? VFXAampsProcessor::irAsset (1) : VFXAampsProcessor::irAsset (0);
-            proc.loadAsset (a, File (f));
+            proc.loadAsset (a, File (f), true);
         }
     }
 }

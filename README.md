@@ -21,6 +21,10 @@ VST3, AU (macOS) and Standalone; macOS universal (Apple Silicon + Intel) and Win
   becomes warm is first caught up on the input history covering its receptive field, so its state is exactly what it would be had
   it been running all along (tested sample-for-sample against always-running references: −127 dB deviation).
   Loading, clearing or big knob jumps crossfade over 40 ms.
+- **Per-slot IR switch.** Each slot has an **IR** button: on, the slot plays through the dual IR (cab); off, it bypasses it — for
+  captures that already include a cab (full rig). Morphing between an IR-on and an IR-off slot blends the cab in or out with
+  the knob, without clicks. Loading a capture whose metadata says *amp + cab* / *full rig* turns its slot's IR off for you
+  (an *amp-only* capture turns it on); reopening a session keeps your settings.
 - **Per-slot level** trims, auto-normalised to each capture's loudness metadata (−18 dBFS; switch with *Level match*).
 - **Sample rates.** Captures run at their trained rate (normally 48 kHz). At other host rates the engine resamples in and out with a
   windowed-sinc resampler (~1.5–1.7 ms latency, reported to the host). At 48 kHz with oversampling off, latency is **zero**.
