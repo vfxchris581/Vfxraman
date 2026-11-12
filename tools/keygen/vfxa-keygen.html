@@ -47,10 +47,10 @@
   <section>
     <h2>1 · Your private key</h2>
     <div class="row">
-      <input class="file" type="file" id="keyfile" accept=".key,.txt">
-      <button class="secondary" id="pasteToggle" type="button">Paste instead</button>
-    </div>
-    <textarea id="keytext" placeholder="…or paste the contents of vfxaamps-private.key" hidden></textarea>
+      <input class="file" type="file" id="keyfile">
+          </div>
+    <label for="keytext">…or paste the text of vfxaamps-private.key here</label>
+    <textarea id="keytext" placeholder="Two long hex numbers separated by a comma"></textarea>
     <div class="status" id="keystatus">No private key loaded.</div>
   </section>
 
@@ -75,6 +75,7 @@
 
 <script>
 "use strict";
+window.addEventListener("error", e => { const el = document.getElementById("keystatus"); if (el) { el.textContent = "Error: " + e.message; el.className = "status bad"; } });
 // Public key built into the plug-in (source/License.cpp). Used to confirm the private key matches it.
 const PUBLIC_E = 0x10001n;
 const PUBLIC_N = BigInt("0xc271947d776a0c6f93ad5eb9ec4cc46e91ca0a7e830de92b303358e8ef5ec5bcaeb9a16489e92f84e681a1ea077c748607716b9b8d1e8be5348e4ade25d5cf0e2f3fd7fcb6d8349747f9d1e79fbcfa08f612d730c667c253f6667315703a3d7baf0a2e1937312714e0572ec33d6d65ec956ef6f6ed6c6b2468063235b0b25443c8363cca156061ffef012edf5b5b1624d46c0862e326ceeddeadabcf9f9a3eb50800d19265002dd3c9ebca54f36b18bd3a202dd592a1a19c4c7d16faabb611aa72fde4ab3bf3ab2f1a06001a21702fefba4304895d44fa446e198385544b8a3598a544e06c9a4e67adf04654437057dbb99e92754b8e23b0033b908e6f5921a7");
@@ -154,8 +155,14 @@ function loadPrivate(text) {
   setStatus($("keystatus"), "Private key loaded — ready to make keys.", true);
 }
 
-$("keyfile").addEventListener("change", e => { const f = e.target.files[0]; if (f) f.text().then(loadPrivate); });
-$("pasteToggle").addEventListener("click", () => { $("keytext").hidden = !$("keytext").hidden; });
+$("keyfile").addEventListener("change", e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => loadPrivate(String(r.result));
+  r.onerror = () => setStatus($("keystatus"), "Couldn't read that file. Try pasting its text instead.", false);
+  r.readAsText(f);
+});
 $("keytext").addEventListener("input", e => loadPrivate(e.target.value));
 
 $("make").addEventListener("click", () => {
