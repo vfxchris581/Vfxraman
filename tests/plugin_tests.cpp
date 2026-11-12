@@ -452,52 +452,6 @@ static void testEditorSnapshot (const File& outDir)
     }
 }
 
-//==============================================================================
-static void testLicense()
-{
-    std::printf ("License: trial, mute when the trial ends, key checks\n");
-    VFXAampsProcessor p;
-    makeNeutral (p);
-    const double fs = 48000;
-    p.prepareToPlay (fs, 480);
-    auto& lic = p.getLicense();
-    const auto dir = tempDir().getChildFile ("license");
-    dir.deleteRecursively();
-    juce::int64 t = juce::Time (2026, 0, 10, 12, 0).toMilliseconds();
-    lic.setClockForTesting ([&] { return juce::Time (t); });
-    lic.setStorageForTesting (dir.getChildFile ("a/license.xml"), dir.getChildFile ("a/.marker"));
-    using S = vfxa::LicenseManager::State;
-    CHECK (lic.getState() == S::trial && lic.getTrialDaysLeft() == 14, "fresh trial: %d days", lic.getTrialDaysLeft());
-
-    const auto x = sine (fs, 1.0, 220.0);
-    auto o = run (p, x, 480);
-    CHECK (rms (o.l, 24000, 48000) > 0.05, "trial passes audio (rms %.4f)", rms (o.l, 24000, 48000));
-
-    t += 15LL * 24 * 3600 * 1000;
-    lic.refresh();
-    CHECK (lic.getState() == S::expired && ! lic.isAudioAllowed(), "expired after 14 days");
-    o = run (p, x, 480);
-    CHECK (rms (o.l, 19200, 48000) < 1e-6 && rms (o.r, 19200, 48000) < 1e-6, "expired trial is muted (rms %.2g)", rms (o.l, 19200, 48000));
-    double jump = 0;
-    for (size_t i = 1; i < 12000; ++i) jump = std::max (jump, (double) std::fabs (o.l[i] - o.l[i - 1]));
-    CHECK (jump < 0.05, "mute fades out without a click (max step %.4f)", jump);
-
-    CHECK (lic.activate ("hello").isNotEmpty(), "junk text rejected");
-    const juce::String fakePayload = juce::Base64::toBase64 ("VFXAamps|1|Nobody|2026-01-01");
-    juce::MemoryBlock junk (256);
-    juce::Random (7).fillBitsRandomly (junk.getData(), junk.getSize());
-    CHECK (lic.activate ("VFXA1." + fakePayload + "." + juce::Base64::toBase64 (junk.getData(), junk.getSize())).isNotEmpty()
-               && lic.getState() == S::expired,
-           "key with a forged signature rejected");
-
-    // a fresh trial (new storage, real clock) brings the sound back for the remaining tests
-    t = juce::Time::getCurrentTime().toMilliseconds();
-    lic.setStorageForTesting (dir.getChildFile ("b/license.xml"), dir.getChildFile ("b/.marker"));
-    o = run (p, x, 480);
-    CHECK (lic.isAudioAllowed() && rms (o.l, 24000, 48000) > 0.05, "audio returns when allowed again");
-    lic.setClockForTesting ([] { return juce::Time::getCurrentTime(); }); // the manager outlives this function's clock
-}
-
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -507,7 +461,6 @@ int main (int argc, char** argv)
     testIr();
     testMorphThroughProcessor();
     testStateAndPresets();
-    testLicense();
     testEditorSnapshot (shots);
     std::printf ("\n%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

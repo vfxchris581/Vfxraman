@@ -33,8 +33,6 @@ private:
     void paintGainScale (juce::Graphics&);
     void rebuildPresetList();
     void showPresetMenu();
-    void updateLicenseUi();
-    void showLicensePanel();
 
     VFXAampsProcessor& proc;
     Knob inTrim, gateThresh, gateRel, morph, bass, mid, treble, presence, output, blend;
@@ -55,22 +53,6 @@ private:
         void resized() override;
     } banner;
     bool bannerDismissed = false;
-
-    /** Header button: "TRIAL · N DAYS LEFT" / "TRIAL ENDED", hidden once licensed. */
-    juce::TextButton licenseButton;
-    /** Key entry, drawn over the amp (no separate window, so it can't end up behind the host). */
-    struct LicensePanel : juce::Component
-    {
-        juce::TextEditor keyField;
-        juce::TextButton activateButton { "ACTIVATE" }, closeButton { "NOT NOW" };
-        juce::String title, message, result;
-        bool resultIsError = false;
-        LicensePanel();
-        void paint (juce::Graphics&) override;
-        void resized() override;
-        juce::Rectangle<int> card() const;
-    } licensePanel;
-    int shownLicenseState = -1, shownDaysLeft = -1;
 
     std::unique_ptr<juce::FileChooser> chooser;
     juce::Image tolex, metal;

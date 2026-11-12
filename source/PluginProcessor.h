@@ -2,7 +2,6 @@
 #pragma once
 
 #include "DualIr.h"
-#include "License.h"
 #include "Parameters.h"
 #include "vfxa/Dynamics.h"
 #include "vfxa/Filters.h"
@@ -92,9 +91,6 @@ public:
     float getOutputPeak() const noexcept { return outPeak.load (std::memory_order_relaxed); }
     /** True once IR `which` is loaded and active in the convolution (tests / offline use). */
     bool isIrReady (int which) const noexcept { return irs.isReady (which); }
-
-    /** License / trial state, shared by all instances (message thread). */
-    vfxa::LicenseManager& getLicense() noexcept { return *license; }
     float getInputPeak() const noexcept { return inPeak.load (std::memory_order_relaxed); }
 
     juce::AudioProcessorValueTreeState apvts;
@@ -122,9 +118,7 @@ private:
     std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> osTone, osLim;
 
     vfxa::GainSmoother inTrim, outGain;
-    vfxa::LinearSmoother gateEnable, limitEnable, switchFade, licenseGate;
-    juce::SharedResourcePointer<vfxa::LicenseManager> license;
-    int licenseRefreshTicks = 0;
+    vfxa::LinearSmoother gateEnable, limitEnable, switchFade;
     std::array<vfxa::LinearSmoother, 4> toneKnobs;
     vfxa::MorphEngine::BlockParams engineParams;
 

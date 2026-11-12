@@ -118,141 +118,11 @@ AmpFace::AmpFace (VFXAampsProcessor& p) : proc (p)
                               });
     };
 
-    addAndMakeVisible (licenseButton);
-    licenseButton.setTooltip ("Enter your VFXAamps license key");
-    licenseButton.onClick = [this] { showLicensePanel(); };
-    addChildComponent (licensePanel);
-    licensePanel.closeButton.onClick = [this] { licensePanel.setVisible (false); };
-    licensePanel.activateButton.onClick = [this]
-    {
-        const auto err = proc.getLicense().activate (licensePanel.keyField.getText());
-        if (err.isNotEmpty())
-        {
-            licensePanel.result = err;
-            licensePanel.resultIsError = true;
-            licensePanel.repaint();
-            return;
-        }
-        licensePanel.keyField.clear();
-        licensePanel.setVisible (false);
-        updateLicenseUi();
-    };
-    licensePanel.keyField.onReturnKey = [this] { licensePanel.activateButton.triggerClick(); };
-
     setSize (kWidth, kHeight);
     refreshStatus();
-    updateLicenseUi();
 }
 
 AmpFace::~AmpFace() = default;
-
-//==============================================================================
-// License
-void AmpFace::updateLicenseUi()
-{
-    auto& lic = proc.getLicense();
-    const int st = static_cast<int> (lic.getState()), days = lic.getTrialDaysLeft();
-    if (st == shownLicenseState && days == shownDaysLeft) return;
-    shownLicenseState = st;
-    shownDaysLeft = days;
-
-    using S = vfxa::LicenseManager::State;
-    const auto state = lic.getState();
-    licenseButton.setVisible (state != S::licensed);
-    if (state == S::trial)
-    {
-        licenseButton.setButtonText ("TRIAL  " + String (days) + (days == 1 ? " DAY" : " DAYS") + String::fromUTF8 (" LEFT  \xc2\xb7  ENTER KEY"));
-        licenseButton.removeColour (TextButton::buttonColourId);
-        licenseButton.removeColour (TextButton::textColourOffId);
-    }
-    else if (state == S::expired)
-    {
-        licenseButton.setButtonText (String::fromUTF8 ("TRIAL ENDED  \xc2\xb7  ENTER LICENSE KEY"));
-        licenseButton.setColour (TextButton::buttonColourId, Colour (0xff6a1410));
-        licenseButton.setColour (TextButton::textColourOffId, Colours::white);
-        if (! licensePanel.isVisible()) showLicensePanel(); // audio is muted: say why straight away
-    }
-    else if (licensePanel.isVisible())
-    {
-        licensePanel.setVisible (false);
-    }
-    repaint (0, 0, kWidth, 100); // tagline / "licensed to" line
-}
-
-void AmpFace::showLicensePanel()
-{
-    auto& lic = proc.getLicense();
-    if (lic.getState() == vfxa::LicenseManager::State::expired)
-    {
-        licensePanel.title = "Your 14-day trial has ended";
-        licensePanel.message = "VFXAamps is muted until a license key is entered. Paste the key you received below.";
-    }
-    else
-    {
-        const int d = lic.getTrialDaysLeft();
-        licensePanel.title = "Enter your license key";
-        licensePanel.message = "Trial: " + String (d) + (d == 1 ? " day" : " days") + " left. Paste the key you received below.";
-    }
-    licensePanel.result = {};
-    licensePanel.resultIsError = false;
-    licensePanel.setBounds (getLocalBounds());
-    licensePanel.setVisible (true);
-    licensePanel.toFront (true);
-    licensePanel.keyField.grabKeyboardFocus();
-}
-
-AmpFace::LicensePanel::LicensePanel()
-{
-    keyField.setMultiLine (true, true);
-    keyField.setReturnKeyStartsNewLine (false);
-    keyField.setFont (FontOptions (Font::getDefaultMonospacedFontName(), 12.0f, Font::plain));
-    keyField.setTextToShowWhenEmpty (String::fromUTF8 ("VFXA1.\xe2\x80\xa6"), Colour (0x80ffffff));
-    keyField.setColour (TextEditor::backgroundColourId, Colour (0xff0a1230));
-    keyField.setColour (TextEditor::textColourId, Colour (0xffeef1f6));
-    keyField.setColour (TextEditor::outlineColourId, Colour (0xff26386b));
-    keyField.setColour (TextEditor::focusedOutlineColourId, Colour (0xff23ded9));
-    addAndMakeVisible (keyField);
-    addAndMakeVisible (activateButton);
-    addAndMakeVisible (closeButton);
-}
-
-Rectangle<int> AmpFace::LicensePanel::card() const { return Rectangle<int> (560, 268).withCentre (getLocalBounds().getCentre()); }
-
-void AmpFace::LicensePanel::paint (Graphics& g)
-{
-    g.fillAll (Colour (0xb0000000)); // the amp stays visible but dimmed and not clickable
-    const auto c = card().toFloat();
-    g.setColour (Colour (0x80000000));
-    g.fillRoundedRectangle (c.translated (0.0f, 4.0f).expanded (2.0f), 12.0f);
-    g.setGradientFill (ColourGradient (Colour (0xff1a2a52), c.getTopLeft(), Colour (0xff0b1430), c.getBottomLeft(), false));
-    g.fillRoundedRectangle (c, 10.0f);
-    g.setColour (Colour (0xff26386b));
-    g.drawRoundedRectangle (c.reduced (0.5f), 10.0f, 1.0f);
-    auto r = card().reduced (24, 18);
-    g.setColour (Colour (0xffeef1f6));
-    g.setFont (AmpLookAndFeel::labelFont (20.0f, true));
-    g.drawText (title, r.removeFromTop (28), Justification::centredLeft);
-    g.setColour (Colour (0xff9aa7c4));
-    g.setFont (AmpLookAndFeel::labelFont (13.5f, false));
-    g.drawFittedText (message, r.removeFromTop (40), Justification::centredLeft, 2);
-    if (result.isNotEmpty())
-    {
-        g.setColour (resultIsError ? colours::warn : Colour (0xff3ddc97));
-        g.setFont (AmpLookAndFeel::labelFont (13.0f, false));
-        g.drawFittedText (result, card().reduced (24, 0).withTop (card().getBottom() - 92).withHeight (30), Justification::centredLeft, 2);
-    }
-}
-
-void AmpFace::LicensePanel::resized()
-{
-    auto r = card().reduced (24, 18);
-    r.removeFromTop (72);
-    keyField.setBounds (r.removeFromTop (80));
-    auto buttons = card().reduced (24, 18).removeFromBottom (32);
-    activateButton.setBounds (buttons.removeFromRight (130));
-    buttons.removeFromRight (10);
-    closeButton.setBounds (buttons.removeFromRight (110));
-}
 
 void AmpFace::resized()
 {
@@ -260,8 +130,6 @@ void AmpFace::resized()
 
     // header
     presetButton.setBounds (560, 50, 230, 30);
-    licenseButton.setBounds (256, 52, 292, 26);
-    if (licensePanel.isVisible()) licensePanel.setBounds (getLocalBounds());
     saveButton.setBounds (796, 50, 60, 30);
     osBox.setBounds (866, 50, 92, 30);
 
@@ -363,7 +231,6 @@ void AmpFace::tick()
     const float ip = proc.getInputPeak();
     if (std::abs (c - cpu) > 0.004f || m != models || std::abs (ip - inPeak) > 0.01f) { cpu = c; models = m; inPeak = ip; changed = true; }
     if (changed) repaint (0, 0, kWidth, slotStrip.getY());
-    updateLicenseUi();
 }
 
 //==============================================================================
@@ -456,11 +323,7 @@ void AmpFace::paintBackground (Graphics& g)
             const auto wordBox = Rectangle<float> (treeBox.getRight() + 7.0f, badge.getCentreY() - wh * 0.5f, ww, wh);
             g.drawImage (logoWord, wordBox, RectanglePlacement::centred);
         }
-        if (proc.getLicense().getState() == vfxa::LicenseManager::State::licensed)
-        {
-            AmpLookAndFeel::drawEngraved (g, "NEURAL AMP HEAD  /  10-SLOT MORPH  /  DUAL IR", { 256.0f, 50.0f, 290.0f, 16.0f }, 9.5f, Justification::centredLeft);
-            AmpLookAndFeel::drawEngraved (g, "LICENSED TO  " + proc.getLicense().getLicensee().toUpperCase(), { 256.0f, 66.0f, 290.0f, 16.0f }, 8.5f, Justification::centredLeft);
-        }
+        AmpLookAndFeel::drawEngraved (g, "NEURAL AMP HEAD  /  10-SLOT MORPH  /  DUAL IR", { 256.0f, 57.0f, 290.0f, 16.0f }, 9.5f, Justification::centredLeft);
     }
     {
         const Point<float> pc { faceplate.getRight() - 52.0f, 65.0f };
