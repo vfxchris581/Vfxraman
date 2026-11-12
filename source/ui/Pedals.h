@@ -52,15 +52,20 @@ private:
 class Pedalboard : public juce::Component
 {
 public:
-    static constexpr int kWidth = 1240, kHeight = 186;
+    static constexpr int kWidth = 1240, kHeight = 186;          // horizontal strip (pedals only)
+    static constexpr int kColumnWidth = 236, kColumnHeight = 410; // vertical column beside the rack
     explicit Pedalboard (VFXAampsProcessor&);
+    void setVertical (bool v);
+    bool isVertical() const noexcept { return vertical; }
     void tick();
     void refresh();
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
+    void paintVertical (juce::Graphics&);
     PedalUnit p1, p2;
+    bool vertical = false;
 };
 
 } // namespace vfxa::ui

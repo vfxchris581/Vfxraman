@@ -612,9 +612,18 @@ VFXAampsEditor::~VFXAampsEditor()
     setLookAndFeel (nullptr);
 }
 
+namespace
+{
+// With both shown, the pedals sit in a column beside the rack and the rack is scaled to the remaining width,
+// which keeps the whole rig close to square.
+constexpr double kSideRackScale = static_cast<double> (vfxa::ui::Rack::kWidth - vfxa::ui::Pedalboard::kColumnWidth) / vfxa::ui::Rack::kWidth;
+}
+
 int VFXAampsEditor::baseHeight() const noexcept
 {
-    return vfxa::ui::AmpFace::kHeight + (rackShown ? vfxa::ui::Rack::kHeight : 0) + (pedalsShown ? vfxa::ui::Pedalboard::kHeight : 0);
+    using F = vfxa::ui::AmpFace;
+    if (rackShown && pedalsShown) return F::kHeight + vfxa::ui::Pedalboard::kColumnHeight;
+    return F::kHeight + (rackShown ? vfxa::ui::Rack::kHeight : 0) + (pedalsShown ? vfxa::ui::Pedalboard::kHeight : 0);
 }
 
 void VFXAampsEditor::setSectionsShown (bool showRack, bool showPedals)
@@ -624,6 +633,7 @@ void VFXAampsEditor::setSectionsShown (bool showRack, bool showPedals)
     pedalsShown = showPedals;
     rack.setVisible (showRack);
     pedalboard.setVisible (showPedals);
+    pedalboard.setVertical (showRack && showPedals);
     face.rackButton.setToggleState (showRack, juce::dontSendNotification);
     face.pedalsButton.setToggleState (showPedals, juce::dontSendNotification);
     proc.getSettings().setValue ("rackShown", showRack);
@@ -640,12 +650,23 @@ void VFXAampsEditor::resized()
     const float scale = static_cast<float> (getWidth()) / static_cast<float> (F::kWidth);
     face.setTransform (juce::AffineTransform::scale (scale));
     face.setBounds (0, 0, F::kWidth, F::kHeight);
-    int y = F::kHeight;
-    rack.setTransform (juce::AffineTransform::scale (scale));
-    rack.setBounds (0, y, vfxa::ui::Rack::kWidth, vfxa::ui::Rack::kHeight);
-    if (rackShown) y += vfxa::ui::Rack::kHeight;
-    pedalboard.setTransform (juce::AffineTransform::scale (scale));
-    pedalboard.setBounds (0, y, vfxa::ui::Pedalboard::kWidth, vfxa::ui::Pedalboard::kHeight);
+    const int y = F::kHeight;
+    if (rackShown && pedalsShown)
+    {
+        using PB = vfxa::ui::Pedalboard;
+        pedalboard.setTransform (juce::AffineTransform::scale (scale));
+        pedalboard.setBounds (0, y, PB::kColumnWidth, PB::kColumnHeight);
+        rack.setTransform (juce::AffineTransform::scale (static_cast<float> (scale * kSideRackScale))
+                               .translated (PB::kColumnWidth * scale, y * scale));
+        rack.setBounds (0, 0, vfxa::ui::Rack::kWidth, vfxa::ui::Rack::kHeight);
+    }
+    else
+    {
+        rack.setTransform (juce::AffineTransform::scale (scale));
+        rack.setBounds (0, y, vfxa::ui::Rack::kWidth, vfxa::ui::Rack::kHeight);
+        pedalboard.setTransform (juce::AffineTransform::scale (scale));
+        pedalboard.setBounds (0, rackShown ? y + vfxa::ui::Rack::kHeight : y, vfxa::ui::Pedalboard::kWidth, vfxa::ui::Pedalboard::kHeight);
+    }
     proc.getSettings().setValue ("uiScale", scale);
 }
 

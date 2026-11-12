@@ -188,10 +188,69 @@ Pedalboard::Pedalboard (VFXAampsProcessor& p)
     setSize (kWidth, kHeight);
 }
 
+void Pedalboard::setVertical (bool v)
+{
+    if (v == vertical) return;
+    vertical = v;
+    resized();
+    repaint();
+}
+
 void Pedalboard::resized()
 {
+    if (vertical)
+    {
+        p1.setBounds (16, 40, 204, 160);
+        p2.setBounds (16, 230, 204, 160);
+        return;
+    }
     p1.setBounds (430, 14, 204, 160);
     p2.setBounds (700, 14, 204, 160);
+}
+
+void Pedalboard::paintVertical (Graphics& g)
+{
+    const auto r = getLocalBounds().toFloat();
+    g.setColour (Colour (0xff0d0d0f));
+    g.fillRect (r);
+    auto board = r.reduced (6.0f, 6.0f);
+    g.setGradientFill (ColourGradient (Colour (0xff9a9da3), board.getTopLeft(), Colour (0xff4a4d53), board.getTopRight(), false));
+    g.fillRoundedRectangle (board, 6.0f);
+    auto felt = board.reduced (5.0f);
+    g.setGradientFill (ColourGradient (Colour (0xff1d1e22), felt.getTopLeft(), Colour (0xff111215), felt.getBottomLeft(), false));
+    g.fillRoundedRectangle (felt, 3.0f);
+    Random rng (17);
+    for (int i = 0; i < 300; ++i)
+    {
+        g.setColour (Colour (0x0affffff));
+        g.fillRect (felt.getX() + rng.nextFloat() * felt.getWidth(), felt.getY() + rng.nextFloat() * felt.getHeight(), 1.0f, 1.0f);
+    }
+    g.setFont (Font (FontOptions (14.0f, Font::bold | Font::italic)).withExtraKerningFactor (0.06f));
+    g.setColour (Colour (0xffe9ecf2));
+    g.drawText ("PEDALBOARD", Rectangle<float> (18.0f, 14.0f, 200.0f, 18.0f), Justification::centredLeft);
+
+    // patch cables (drawn under the pedals): guitar -> pedal 1 -> pedal 2 -> up to the amp
+    auto cable = [&] (Path p)
+    {
+        g.setColour (Colour (0xff050506));
+        g.strokePath (p, PathStrokeType (5.0f, PathStrokeType::curved, PathStrokeType::rounded));
+        g.setColour (Colour (0x30ffffff));
+        g.strokePath (p, PathStrokeType (1.0f, PathStrokeType::curved, PathStrokeType::rounded), AffineTransform::translation (0.0f, -1.2f));
+    };
+    const float j1 = 40.0f + 58.0f, j2 = 230.0f + 58.0f;
+    Path in;  in.startNewSubPath (5.0f, 46.0f);  in.cubicTo (10.0f, 70.0f, 4.0f, j1, 18.0f, j1);
+    Path mid; mid.startNewSubPath (218.0f, j1);  mid.cubicTo (262.0f, 205.0f, -26.0f, 215.0f, 18.0f, j2);
+    Path out; out.startNewSubPath (218.0f, j2);  out.cubicTo (236.0f, 300.0f, 238.0f, 30.0f, 226.0f, 4.0f);
+    cable (in);
+    cable (mid);
+    cable (out);
+    g.setFont (AmpLookAndFeel::labelFont (8.0f));
+    g.setColour (Colour (0xff8d95a6));
+    g.drawText ("TO AMP", Rectangle<float> (140.0f, 14.0f, 66.0f, 18.0f), Justification::centredRight);
+    Path arrow;
+    arrow.addTriangle (213.0f, 18.0f, 209.0f, 26.0f, 217.0f, 26.0f);
+    g.fillPath (arrow);
+    g.drawText ("Off or empty = straight through", Rectangle<float> (14.0f, r.getBottom() - 22.0f, 208.0f, 14.0f), Justification::centred);
 }
 
 void Pedalboard::tick() { p1.tick(); p2.tick(); }
@@ -199,6 +258,7 @@ void Pedalboard::refresh() { p1.refresh(); p2.refresh(); }
 
 void Pedalboard::paint (Graphics& g)
 {
+    if (vertical) { paintVertical (g); return; }
     const auto r = getLocalBounds().toFloat();
     // board: dark carpet-like surface in an aluminium frame
     g.setColour (Colour (0xff0d0d0f));
