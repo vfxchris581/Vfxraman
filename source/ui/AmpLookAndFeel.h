@@ -21,7 +21,7 @@ namespace colours
 }
 
 /** Knob styles, chosen with slider.getProperties().set ("style", ...). */
-enum class KnobStyle { ChickenHead, Knurled, Small };
+enum class KnobStyle { ChickenHead, Knurled, Small, Rack };
 
 class AmpLookAndFeel : public juce::LookAndFeel_V4
 {
@@ -30,6 +30,8 @@ public:
 
     void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos, float start, float end, juce::Slider&) override;
     void drawToggleButton (juce::Graphics&, juce::ToggleButton&, bool highlighted, bool down) override;
+    void drawLinearSlider (juce::Graphics&, int x, int y, int w, int h, float pos, float minPos, float maxPos,
+                           juce::Slider::SliderStyle, juce::Slider&) override;
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool highlighted, bool down) override;
     void drawButtonText (juce::Graphics&, juce::TextButton&, bool highlighted, bool down) override;
     void drawComboBox (juce::Graphics&, int w, int h, bool down, int bx, int by, int bw, int bh, juce::ComboBox&) override;
@@ -45,6 +47,11 @@ public:
     static void drawEngraved (juce::Graphics&, const juce::String&, juce::Rectangle<float>, float height,
                               juce::Justification = juce::Justification::centred, bool bold = true);
     static void drawScrew (juce::Graphics&, juce::Point<float> centre, float radius, float angle);
+    /** Rack-unit knob: black anodised body, silver cap, white pointer, accent-coloured value ring. */
+    static void drawRackKnob (juce::Graphics&, juce::Rectangle<float>, float start, float end, float angle, bool bipolar,
+                              juce::Colour accent, bool hover, bool enabled);
+    /** Rack button: rubber cap with an LED that lights in the accent colour when on. */
+    static void drawRackButton (juce::Graphics&, juce::Button&, bool highlighted, bool down);
     static juce::Font labelFont (float height, bool bold = true);
 };
 

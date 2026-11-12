@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "ui/AmpComponents.h"
 #include "ui/AmpLookAndFeel.h"
+#include "ui/Rack.h"
 
 namespace vfxa::ui
 {
@@ -41,6 +42,11 @@ private:
     juce::ComboBox osBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> osAtt;
     juce::TextButton presetButton, saveButton { "SAVE" };
+public:
+    /** Shows / hides the effects rack under the amp (handled by the editor). */
+    juce::TextButton rackButton { "RACK" };
+    TunerDisplay tunerDisplay;
+private:
     std::array<std::unique_ptr<SlotCard>, vfxa::kNumSlots> slots;
     std::array<std::unique_ptr<IrColumn>, 2> irColumns;
 
@@ -77,11 +83,17 @@ public:
     void resized() override;
     void timerCallback() override;
 
+    void setRackShown (bool shown);
+    bool isRackShown() const noexcept { return rackShown; }
+
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    int baseHeight() const noexcept;
 
     VFXAampsProcessor& proc;
     vfxa::ui::AmpLookAndFeel lnf;
     vfxa::ui::AmpFace face;
+    vfxa::ui::Rack rack;
+    bool rackShown = true;
     juce::TooltipWindow tooltips { this, 700 };
 };

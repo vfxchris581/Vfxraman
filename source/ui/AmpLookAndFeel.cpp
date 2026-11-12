@@ -168,6 +168,12 @@ void AmpLookAndFeel::drawRotarySlider (Graphics& g, int x, int y, int w, int h, 
     r = r.withSizeKeepingCentre (jmin (r.getWidth(), r.getHeight()), jmin (r.getWidth(), r.getHeight()));
     const bool hover = s.isMouseOverOrDragging();
 
+    if (style == KnobStyle::Rack)
+    {
+        const auto accent = Colour (static_cast<uint32> (static_cast<int64> (s.getProperties().getWithDefault ("accent", (int64) 0xff23ded9))));
+        drawRackKnob (g, r, start, end, angle, s.getProperties().getWithDefault ("bipolar", false), accent, hover, s.isEnabled());
+        return;
+    }
     if (style == KnobStyle::ChickenHead)
     {
         // tick dots around the knob, numbered 0..10 at the ends and middle
@@ -263,6 +269,7 @@ void AmpLookAndFeel::drawToggleButton (Graphics& g, ToggleButton& b, bool highli
 
 void AmpLookAndFeel::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool highlighted, bool down)
 {
+    if (b.getProperties().getWithDefault ("rack", false)) { drawRackButton (g, b, highlighted, down); return; }
     auto r = b.getLocalBounds().toFloat().reduced (0.5f);
     const float corner = jmin (5.0f, r.getHeight() * 0.3f);
     g.setGradientFill (ColourGradient (down ? Colour (0xff17181b) : Colour (0xff34363c), r.getTopLeft(),
@@ -274,6 +281,16 @@ void AmpLookAndFeel::drawButtonBackground (Graphics& g, Button& b, const Colour&
 
 void AmpLookAndFeel::drawButtonText (Graphics& g, TextButton& b, bool highlighted, bool)
 {
+    if (b.getProperties().getWithDefault ("rack", false))
+    {
+        // label sits right of the LED
+        auto r = b.getLocalBounds().toFloat();
+        r.removeFromLeft (jmin (22.0f, r.getHeight() * 0.9f));
+        g.setFont (labelFont (jmin (11.0f, b.getHeight() * 0.48f)));
+        g.setColour (b.isEnabled() ? Colour (highlighted ? 0xffffffff : 0xffd8dce4) : Colour (0x60d8dce4));
+        g.drawText (b.getButtonText(), r.withTrimmedRight (4.0f), Justification::centred, false);
+        return;
+    }
     g.setFont (labelFont (jmin (13.0f, b.getHeight() * 0.55f)));
     g.setColour (highlighted ? colours::amberHot : Colour (0xffe8e2d4));
     g.drawText (b.getButtonText(), b.getLocalBounds(), Justification::centred, false);
@@ -360,6 +377,137 @@ Image makeBrushedMetal (int w, int h, float scale)
         }
     }
     return img;
+}
+
+
+//==============================================================================
+// Rack units
+void AmpLookAndFeel::drawRackKnob (Graphics& g, Rectangle<float> r, float start, float end, float angle, bool bipolar,
+                                   Colour accent, bool hover, bool enabled)
+{
+    const auto c = r.getCentre();
+    const float rad = r.getWidth() * 0.5f;
+    if (! enabled) accent = accent.withSaturation (0.0f).withAlpha (0.35f);
+
+    // value ring (LED-style): dim track, lit value
+    Path track, value;
+    track.addCentredArc (c.x, c.y, rad * 0.94f, rad * 0.94f, 0.0f, start, end, true);
+    g.setColour (Colour (0xff050608));
+    g.strokePath (track, PathStrokeType (rad * 0.13f, PathStrokeType::curved, PathStrokeType::butt));
+    const float from = bipolar ? (start + end) * 0.5f : start;
+    value.addCentredArc (c.x, c.y, rad * 0.94f, rad * 0.94f, 0.0f, jmin (from, angle), jmax (from, angle), true);
+    g.setColour (accent.withAlpha (0.25f));
+    g.strokePath (value, PathStrokeType (rad * 0.24f, PathStrokeType::curved, PathStrokeType::butt));
+    g.setColour (accent);
+    g.strokePath (value, PathStrokeType (rad * 0.09f, PathStrokeType::curved, PathStrokeType::butt));
+
+    // body: black anodised with a knurled skirt
+    auto body = r.reduced (rad * 0.2f);
+    const float br = body.getWidth() * 0.5f;
+    g.setColour (Colour (0x90000000));
+    g.fillEllipse (body.translated (0.0f, br * 0.10f).expanded (br * 0.04f));
+    g.setGradientFill (ColourGradient (Colour (0xff3a3d44), body.getTopLeft(), Colour (0xff0b0c0e), body.getBottomRight(), false));
+    g.fillEllipse (body);
+    g.setColour (Colour (0xff000000));
+    for (int i = 0; i < 36; ++i)
+    {
+        const float a = angle + MathConstants<float>::twoPi * static_cast<float> (i) / 36.0f;
+        g.drawLine (Line<float> (c.getPointOnCircumference (br * 0.80f, a), c.getPointOnCircumference (br * 0.98f, a)), 0.9f);
+    }
+    // silver cap
+    auto cap = body.reduced (br * 0.24f);
+    g.setGradientFill (ColourGradient (Colour (0xfff2f3f5), cap.getTopLeft(), Colour (0xff70747c), cap.getBottomRight(), false));
+    g.fillEllipse (cap);
+    g.setGradientFill (ColourGradient (Colour (0x00ffffff), cap.getCentre(), Colour (0x30000000), cap.getTopLeft(), true));
+    g.fillEllipse (cap);
+    g.setColour (Colour (0xff2a2c30));
+    g.drawEllipse (cap, 0.8f);
+    // pointer
+    g.setColour (Colour (0xff111214));
+    g.drawLine (Line<float> (c.getPointOnCircumference (br * 0.15f, angle), c.getPointOnCircumference (br * 0.70f, angle)), jmax (1.6f, br * 0.10f));
+    if (hover && enabled)
+    {
+        g.setColour (accent.withAlpha (0.25f));
+        g.drawEllipse (body.expanded (1.0f), 1.2f);
+    }
+}
+
+void AmpLookAndFeel::drawRackButton (Graphics& g, Button& b, bool highlighted, bool down)
+{
+    const auto accent = Colour (static_cast<uint32> (static_cast<int64> (b.getProperties().getWithDefault ("accent", (int64) 0xff23ded9))));
+    auto r = b.getLocalBounds().toFloat().reduced (0.5f);
+    const float corner = 3.0f;
+    // recess
+    g.setColour (Colour (0xff050506));
+    g.fillRoundedRectangle (r, corner);
+    // rubber cap
+    auto cap = r.reduced (1.5f).translated (0.0f, down ? 0.8f : 0.0f);
+    g.setGradientFill (ColourGradient (Colour (down ? 0xff23252a : 0xff3b3e45), cap.getTopLeft(), Colour (0xff1a1b1f), cap.getBottomLeft(), false));
+    g.fillRoundedRectangle (cap, corner);
+    g.setColour (Colour (highlighted ? 0x50ffffff : 0x22ffffff));
+    g.drawRoundedRectangle (cap, corner, 0.8f);
+    // LED
+    const float d = jmin (8.0f, cap.getHeight() * 0.36f);
+    const auto led = Rectangle<float> (d, d).withCentre ({ cap.getX() + jmin (11.0f, cap.getHeight() * 0.45f), cap.getCentreY() });
+    const bool on = b.getToggleState();
+    if (on)
+    {
+        g.setColour (accent.withAlpha (0.35f));
+        g.fillEllipse (led.expanded (d * 0.6f));
+    }
+    g.setGradientFill (ColourGradient (on ? accent.brighter (0.6f) : Colour (0xff2b2d31), led.getTopLeft(),
+                                       on ? accent : Colour (0xff121315), led.getBottomRight(), false));
+    g.fillEllipse (led);
+    g.setColour (Colour (0x80000000));
+    g.drawEllipse (led, 0.7f);
+}
+
+void AmpLookAndFeel::drawLinearSlider (Graphics& g, int x, int y, int w, int h, float pos, float minPos, float maxPos,
+                                       Slider::SliderStyle style, Slider& s)
+{
+    if (! s.getProperties().getWithDefault ("fader", false) || style != Slider::LinearVertical)
+    {
+        LookAndFeel_V4::drawLinearSlider (g, x, y, w, h, pos, minPos, maxPos, style, s);
+        return;
+    }
+    const auto accent = Colour (static_cast<uint32> (static_cast<int64> (s.getProperties().getWithDefault ("accent", (int64) 0xffffa63a))));
+    const auto area = Rectangle<float> (static_cast<float> (x), static_cast<float> (y), static_cast<float> (w), static_cast<float> (h));
+    const float cx = area.getCentreX();
+    // slot
+    auto slot = Rectangle<float> (4.0f, area.getHeight() + 8.0f).withCentre ({ cx, area.getCentreY() });
+    g.setColour (Colour (0xff050506));
+    g.fillRoundedRectangle (slot, 2.0f);
+    g.setColour (Colour (0x30ffffff));
+    g.drawLine (slot.getRight() + 0.5f, slot.getY() + 2.0f, slot.getRight() + 0.5f, slot.getBottom() - 2.0f, 0.6f);
+    // lit segment from 0 dB to the cap
+    const float zeroY = area.getCentreY();
+    const float top = jmin (zeroY, pos), bottom = jmax (zeroY, pos);
+    if (bottom - top > 0.5f)
+    {
+        g.setColour (accent.withAlpha (s.isEnabled() ? 0.85f : 0.25f));
+        g.fillRect (Rectangle<float> (2.0f, bottom - top).withCentre ({ cx, (top + bottom) * 0.5f }));
+    }
+    // fader cap
+    const float capW = jmin (static_cast<float> (w) * 0.82f, 30.0f), capH = 16.0f;
+    auto cap = Rectangle<float> (capW, capH).withCentre ({ cx, pos });
+    g.setColour (Colour (0x90000000));
+    g.fillRoundedRectangle (cap.translated (0.0f, 2.0f), 2.5f);
+    g.setGradientFill (ColourGradient (Colour (0xff4a4d55), cap.getTopLeft(), Colour (0xff15161a), cap.getBottomLeft(), false));
+    g.fillRoundedRectangle (cap, 2.5f);
+    for (int i = -1; i <= 1; ++i)
+    {
+        g.setColour (Colour (0x55000000));
+        g.drawLine (cap.getX() + 3.0f, cap.getCentreY() + i * 4.0f + 0.6f, cap.getRight() - 3.0f, cap.getCentreY() + i * 4.0f + 0.6f, 0.8f);
+        g.setColour (Colour (0x30ffffff));
+        g.drawLine (cap.getX() + 3.0f, cap.getCentreY() + i * 4.0f, cap.getRight() - 3.0f, cap.getCentreY() + i * 4.0f, 0.8f);
+    }
+    g.setColour (Colour (0xfff2f3f5));
+    g.drawLine (cap.getX() + 2.0f, cap.getCentreY(), cap.getRight() - 2.0f, cap.getCentreY(), 1.4f);
+    if (s.isMouseOverOrDragging())
+    {
+        g.setColour (accent.withAlpha (0.5f));
+        g.drawRoundedRectangle (cap.expanded (1.0f), 3.0f, 1.0f);
+    }
 }
 
 } // namespace vfxa::ui

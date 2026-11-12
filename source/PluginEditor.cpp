@@ -48,7 +48,7 @@ void AmpFace::RelinkBanner::resized()
 }
 
 //==============================================================================
-AmpFace::AmpFace (VFXAampsProcessor& p) : proc (p)
+AmpFace::AmpFace (VFXAampsProcessor& p) : proc (p), tunerDisplay (p)
 {
     logoTree = ImageCache::getFromMemory (VFXAampsAssets::logotree_png, VFXAampsAssets::logotree_pngSize);
     logoWord = ImageCache::getFromMemory (VFXAampsAssets::logowordmark_png, VFXAampsAssets::logowordmark_pngSize);
@@ -118,6 +118,13 @@ AmpFace::AmpFace (VFXAampsProcessor& p) : proc (p)
                               });
     };
 
+    addAndMakeVisible (tunerDisplay);
+    rackButton.getProperties().set ("rack", true);
+    rackButton.getProperties().set ("accent", (int64) 0xff23ded9);
+    rackButton.setClickingTogglesState (true);
+    rackButton.setTooltip ("Show or hide the effects rack (graphic EQ, delay, reverb)");
+    addAndMakeVisible (rackButton);
+
     setSize (kWidth, kHeight);
     refreshStatus();
 }
@@ -132,6 +139,8 @@ void AmpFace::resized()
     presetButton.setBounds (560, 50, 230, 30);
     saveButton.setBounds (796, 50, 60, 30);
     osBox.setBounds (866, 50, 92, 30);
+    tunerDisplay.setBounds (256, 44, 292, 44);
+    rackButton.setBounds (1110, slotStrip.getY() - 26, 82, 22);
 
     // input
     place (inTrim, { 141.0f, 205.0f }, 92.0f);
@@ -231,6 +240,7 @@ void AmpFace::tick()
     const float ip = proc.getInputPeak();
     if (std::abs (c - cpu) > 0.004f || m != models || std::abs (ip - inPeak) > 0.01f) { cpu = c; models = m; inPeak = ip; changed = true; }
     if (changed) repaint (0, 0, kWidth, slotStrip.getY());
+    tunerDisplay.tick();
 }
 
 //==============================================================================
@@ -315,6 +325,7 @@ void AmpFace::paintBackground (Graphics& g)
         g.drawLine (badge.getX() + 8.0f, badge.getY() + 2.0f, badge.getRight() - 8.0f, badge.getY() + 2.0f, 0.8f);
         const auto treeBox = Rectangle<float> (badge.getX() + 7.0f, badge.getY() + 4.0f, 38.0f, 38.0f);
         g.setImageResamplingQuality (Graphics::highResamplingQuality);
+        g.setOpacity (1.0f); // drawImage uses the current colour's alpha; the highlight line above left it at ~15%
         if (logoTree.isValid())
             g.drawImage (logoTree, treeBox, RectanglePlacement::centred);
         if (logoWord.isValid())
@@ -323,7 +334,6 @@ void AmpFace::paintBackground (Graphics& g)
             const auto wordBox = Rectangle<float> (treeBox.getRight() + 7.0f, badge.getCentreY() - wh * 0.5f, ww, wh);
             g.drawImage (logoWord, wordBox, RectanglePlacement::centred);
         }
-        AmpLookAndFeel::drawEngraved (g, "NEURAL AMP HEAD  /  10-SLOT MORPH  /  DUAL IR", { 256.0f, 57.0f, 290.0f, 16.0f }, 9.5f, Justification::centredLeft);
     }
     {
         const Point<float> pc { faceplate.getRight() - 52.0f, 65.0f };
@@ -422,7 +432,7 @@ void AmpFace::paintBackground (Graphics& g)
     AmpLookAndFeel::drawEngraved (g, "NAM MODEL SLOTS", { static_cast<float> (slotStrip.getX()), static_cast<float> (slotStrip.getY()) - 22.0f, 300.0f, 18.0f },
                                   12.0f, Justification::centredLeft);
     AmpLookAndFeel::drawEngraved (g, "drop .nam files on a slot  /  turn GAIN to morph between neighbouring slots",
-                                  { 260.0f, static_cast<float> (slotStrip.getY()) - 22.0f, 900.0f, 18.0f }, 10.0f, Justification::centredRight, false);
+                                  { 260.0f, static_cast<float> (slotStrip.getY()) - 22.0f, 836.0f, 18.0f }, 10.0f, Justification::centredRight, false);
 }
 
 void AmpFace::paintGainScale (Graphics& g)
@@ -565,17 +575,26 @@ void AmpFace::filesDropped (const StringArray& files, int, int)
 
 //==============================================================================
 VFXAampsEditor::VFXAampsEditor (VFXAampsProcessor& p)
-    : AudioProcessorEditor (p), proc (p), face (p)
+    : AudioProcessorEditor (p), proc (p), face (p), rack (p)
 {
     setLookAndFeel (&lnf);
     addAndMakeVisible (face);
-    using F = vfxa::ui::AmpFace;
-    const double ratio = static_cast<double> (F::kWidth) / F::kHeight;
+    addAndMakeVisible (rack);
+    face.rackButton.onClick = [this] { setRackShown (face.rackButton.getToggleState()); };
     setResizable (true, true);
-    setResizeLimits (F::kWidth * 55 / 100, F::kHeight * 55 / 100, F::kWidth * 170 / 100, F::kHeight * 170 / 100);
-    if (auto* c = getConstrainer()) c->setFixedAspectRatio (ratio);
-    const double scale = juce::jlimit (0.55, 1.7, proc.getSettings().getDoubleValue ("uiScale", 0.9));
-    setSize (juce::roundToInt (F::kWidth * scale), juce::roundToInt (F::kHeight * scale));
+
+    rackShown = proc.getSettings().getBoolValue ("rackShown", true);
+    face.rackButton.setToggleState (rackShown, juce::dontSendNotification);
+    rack.setVisible (rackShown);
+
+    using F = vfxa::ui::AmpFace;
+    double scale = juce::jlimit (0.55, 1.7, proc.getSettings().getDoubleValue ("uiScale", 0.9));
+    // first open with the rack: keep the whole rig on screen
+    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        scale = juce::jmin (scale, 0.92 * d->userBounds.getHeight() / baseHeight());
+    scale = juce::jmax (0.55, scale);
+    setRackShown (rackShown);
+    setSize (juce::roundToInt (F::kWidth * scale), juce::roundToInt (baseHeight() * scale));
     proc.addChangeListener (this);
     startTimerHz (30);
 }
@@ -586,13 +605,38 @@ VFXAampsEditor::~VFXAampsEditor()
     setLookAndFeel (nullptr);
 }
 
+int VFXAampsEditor::baseHeight() const noexcept
+{
+    return vfxa::ui::AmpFace::kHeight + (rackShown ? vfxa::ui::Rack::kHeight : 0);
+}
+
+void VFXAampsEditor::setRackShown (bool shown)
+{
+    using F = vfxa::ui::AmpFace;
+    rackShown = shown;
+    rack.setVisible (shown);
+    face.rackButton.setToggleState (shown, juce::dontSendNotification);
+    proc.getSettings().setValue ("rackShown", shown);
+    const int h = baseHeight();
+    setResizeLimits (F::kWidth * 55 / 100, h * 55 / 100, F::kWidth * 170 / 100, h * 170 / 100);
+    if (auto* c = getConstrainer()) c->setFixedAspectRatio (static_cast<double> (F::kWidth) / h);
+    if (getWidth() > 0) setSize (getWidth(), juce::roundToInt (getWidth() * static_cast<double> (h) / F::kWidth));
+}
+
 void VFXAampsEditor::resized()
 {
-    const float scale = static_cast<float> (getWidth()) / static_cast<float> (vfxa::ui::AmpFace::kWidth);
+    using F = vfxa::ui::AmpFace;
+    const float scale = static_cast<float> (getWidth()) / static_cast<float> (F::kWidth);
     face.setTransform (juce::AffineTransform::scale (scale));
-    face.setBounds (0, 0, vfxa::ui::AmpFace::kWidth, vfxa::ui::AmpFace::kHeight);
+    face.setBounds (0, 0, F::kWidth, F::kHeight);
+    rack.setTransform (juce::AffineTransform::scale (scale));
+    rack.setBounds (0, F::kHeight, vfxa::ui::Rack::kWidth, vfxa::ui::Rack::kHeight);
     proc.getSettings().setValue ("uiScale", scale);
 }
 
-void VFXAampsEditor::timerCallback() { face.tick(); }
+void VFXAampsEditor::timerCallback()
+{
+    face.tick();
+    if (rackShown) rack.tick();
+}
 void VFXAampsEditor::changeListenerCallback (juce::ChangeBroadcaster*) { face.refreshStatus(); }

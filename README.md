@@ -10,7 +10,7 @@ VST3, AU (macOS) and Standalone; macOS universal (Apple Silicon + Intel) and Win
 
 ## What it does
 
-**Signal chain:** input trim → noise gate → 10-slot NAM morph → bass / middle / treble + presence → dual IR → master → limiter
+**Signal chain:** input trim → noise gate → 10-slot NAM morph → bass / middle / treble + presence → dual IR → graphic EQ → delay → reverb → master → limiter
 
 - **The 10-slot gain knob.** Load a `.nam` capture into each of slots 1–10 (WaveNet, LSTM, A2 / slimmable, all sizes). The big knob
   runs continuously from 1.0 to 10.0 and morphs between neighbouring slots like a real amp's gain: at 1.5 you hear an
@@ -29,6 +29,14 @@ VST3, AU (macOS) and Standalone; macOS universal (Apple Silicon + Intel) and Win
 - **Sound quality.** 64-bit smoothing, filters, gate and limiter; double-precision host processing supported; no denormals;
   no allocations or locks on the audio thread; every parameter smoothed per sample. Optional 2×/4× oversampling for the tone stack
   and limiter.
+- **Tuner** in the header, listening to your guitar input: note, a cents needle (green within ±3 cents) and the frequency.
+  Accurate to about a cent from low F# on an 8-string up to C6. Click it to mute the output while you tune.
+- **Effects rack** under the amp head, in rack-mount units (show or hide it with **RACK**):
+  - **VX-10 graphic EQ:** 10 bands (31 Hz – 16 kHz, ±12 dB) on faders, a live response curve, FLAT to reset.
+  - **VX-D2 stereo delay:** time up to 2.5 s or synced to the host tempo (1/1 … 1/16, dotted and triplet), feedback, tone,
+    mix, ping-pong. Turning TIME glides like tape; switching it off lets the repeats ring out.
+  - **VX-R8 stereo reverb:** 8-line feedback delay network — size (room → cathedral), decay 0.2–20 s, pre-delay, tone, mix.
+    The tail rings out when switched off.
 - **Amp-head UI.** Resizable, vector-drawn: tolex and brushed metal, chicken-head and knurled knobs, pilot light, a glowing ring and
   slot lamps showing which two slots are blending, CPU meter. Drag `.nam` files onto slots (several fill the following slots) and IRs
   onto IR A / B, or anywhere on the faceplate.

@@ -26,6 +26,41 @@ inline const juce::String oversample = "oversampling";
 
 inline juce::String slotTrim (int slot) { return "slotTrim" + juce::String (slot + 1); }
 
+// Effects rack (added in parameter version 2)
+inline const juce::String eqOn        = "eqOn";
+inline juce::String eqBand (int b) { return "eqBand" + juce::String (b + 1); }
+inline const juce::String dlyOn       = "delayOn";
+inline const juce::String dlyTime     = "delayTime";
+inline const juce::String dlySync     = "delaySync";
+inline const juce::String dlyDiv      = "delayDivision";
+inline const juce::String dlyFeedback = "delayFeedback";
+inline const juce::String dlyMix      = "delayMix";
+inline const juce::String dlyTone     = "delayTone";
+inline const juce::String dlyPing     = "delayPingPong";
+inline const juce::String rvbOn       = "reverbOn";
+inline const juce::String rvbSize     = "reverbSize";
+inline const juce::String rvbDecay    = "reverbDecay";
+inline const juce::String rvbPre      = "reverbPreDelay";
+inline const juce::String rvbTone     = "reverbTone";
+inline const juce::String rvbMix      = "reverbMix";
+
+/** Delay note divisions (for tempo sync) and their length in beats. */
+inline const juce::StringArray& delayDivisionNames()
+{
+    static const juce::StringArray names { "1/1", "1/2", "1/4.", "1/4", "1/4T", "1/8.", "1/8", "1/8T", "1/16" };
+    return names;
+}
+inline double delayDivisionBeats (int index)
+{
+    static const double beats[] { 4.0, 2.0, 1.5, 1.0, 2.0 / 3.0, 0.75, 0.5, 1.0 / 3.0, 0.25 };
+    return beats[juce::jlimit (0, 8, index)];
+}
+inline const char* eqBandLabel (int b)
+{
+    static const char* labels[] { "31", "62", "125", "250", "500", "1K", "2K", "4K", "8K", "16K" };
+    return labels[juce::jlimit (0, 9, b)];
+}
+
 /** Per-IR parameter: ir (0 = A, 1 = B) + name, e.g. "irA_level". */
 inline juce::String ir (int which, const char* name) { return juce::String ("ir") + (which == 0 ? "A_" : "B_") + name; }
 
@@ -84,7 +119,34 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterFloat> (pid (outLevel), "Output", NormalisableRange<float> (-36.0f, 12.0f, 0.01f), 0.0f, dbAttr));
     layout.add (std::make_unique<AudioParameterBool> (pid (limiter), "Limiter", true));
     layout.add (std::make_unique<AudioParameterChoice> (pid (oversample), "Oversampling", StringArray { "Off", "2x", "4x" }, 0));
-    (void) pct;
+
+    // --- effects rack ----------------------------------------------------------------------
+    auto pid2 = [] (const String& id) { return ParameterID { id, 2 }; };
+    auto pctAttr = AudioParameterFloatAttributes().withStringFromValueFunction (pct);
+    auto msAttr = AudioParameterFloatAttributes().withStringFromValueFunction (ms);
+    auto hzAttr = AudioParameterFloatAttributes().withStringFromValueFunction (hz);
+
+    layout.add (std::make_unique<AudioParameterBool> (pid2 (eqOn), "EQ", false));
+    for (int b = 0; b < 10; ++b)
+        layout.add (std::make_unique<AudioParameterFloat> (pid2 (eqBand (b)), String ("EQ ") + eqBandLabel (b) + (b < 5 ? " Hz" : "Hz"),
+                                                           NormalisableRange<float> (-12.0f, 12.0f, 0.01f), 0.0f, dbAttr));
+
+    layout.add (std::make_unique<AudioParameterBool> (pid2 (dlyOn), "Delay", false));
+    layout.add (std::make_unique<AudioParameterFloat> (pid2 (dlyTime), "Delay Time", NormalisableRange<float> (1.0f, 2500.0f, 0.1f, 0.45f), 400.0f, msAttr));
+    layout.add (std::make_unique<AudioParameterBool> (pid2 (dlySync), "Delay Sync", false));
+    layout.add (std::make_unique<AudioParameterChoice> (pid2 (dlyDiv), "Delay Division", delayDivisionNames(), 3));
+    layout.add (std::make_unique<AudioParameterFloat> (pid2 (dlyFeedback), "Delay Feedback", NormalisableRange<float> (0.0f, 0.95f, 0.001f), 0.35f, pctAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid2 (dlyMix), "Delay Mix", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.3f, pctAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid2 (dlyTone), "Delay Tone", NormalisableRange<float> (800.0f, 20000.0f, 1.0f, 0.35f), 6000.0f, hzAttr));
+    layout.add (std::make_unique<AudioParameterBool> (pid2 (dlyPing), "Delay Ping-Pong", false));
+
+    layout.add (std::make_unique<AudioParameterBool> (pid2 (rvbOn), "Reverb", false));
+    layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbSize), "Reverb Size", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.6f, pctAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbDecay), "Reverb Decay", NormalisableRange<float> (0.2f, 20.0f, 0.01f, 0.4f), 2.2f,
+        AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (v, v < 10.0f ? 1 : 0) + " s"; })));
+    layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbPre), "Reverb Pre-Delay", NormalisableRange<float> (0.0f, 250.0f, 0.1f, 0.5f), 20.0f, msAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbTone), "Reverb Tone", NormalisableRange<float> (1000.0f, 18000.0f, 1.0f, 0.4f), 7000.0f, hzAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid2 (rvbMix), "Reverb Mix", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.25f, pctAttr));
     return layout;
 }
 

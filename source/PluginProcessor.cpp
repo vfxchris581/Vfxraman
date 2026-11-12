@@ -34,6 +34,15 @@ VFXAampsProcessor::VFXAampsProcessor()
     pIrOn = param (apvts, P::irOn);           pIrBlend = param (apvts, P::irBlend);
     pOut = param (apvts, P::outLevel);        pLimiter = param (apvts, P::limiter);
     pOs = param (apvts, P::oversample);
+    pEqOn = param (apvts, P::eqOn);
+    for (int b = 0; b < vfxa::GraphicEq::kBands; ++b) pEqBand[static_cast<size_t> (b)] = param (apvts, P::eqBand (b));
+    pDlyOn = param (apvts, P::dlyOn);         pDlyTime = param (apvts, P::dlyTime);
+    pDlySync = param (apvts, P::dlySync);     pDlyDiv = param (apvts, P::dlyDiv);
+    pDlyFb = param (apvts, P::dlyFeedback);   pDlyMix = param (apvts, P::dlyMix);
+    pDlyTone = param (apvts, P::dlyTone);     pDlyPing = param (apvts, P::dlyPing);
+    pRvbOn = param (apvts, P::rvbOn);         pRvbSize = param (apvts, P::rvbSize);
+    pRvbDecay = param (apvts, P::rvbDecay);   pRvbPre = param (apvts, P::rvbPre);
+    pRvbTone = param (apvts, P::rvbTone);     pRvbMix = param (apvts, P::rvbMix);
     for (int k = 0; k < vfxa::kNumSlots; ++k) pSlotTrim[static_cast<size_t> (k)] = param (apvts, P::slotTrim (k));
     for (int w = 0; w < kNumIrs; ++w)
         pIr[static_cast<size_t> (w)] = { param (apvts, P::ir (w, "on")),    param (apvts, P::ir (w, "level")),
@@ -95,6 +104,12 @@ void VFXAampsProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
         }
     }
     limiterL.prepare (sampleRate);
+    graphicEq.prepare (sampleRate);
+    delay.prepare (sampleRate);
+    reverb.prepare (sampleRate);
+    tuner.prepare (sampleRate);
+    tunerGate.prepare (sampleRate, 0.015);
+    tunerGate.snap (tunerMute.load() ? 0.0 : 1.0);
     limiterL.setCeilingDb (-0.3);
 
     inTrim.prepare (sampleRate, 0.020);   inTrim.snapDb (pInTrim->load());
@@ -154,6 +169,11 @@ void VFXAampsProcessor::process (juce::AudioBuffer<T>& buffer)
 
     const int numIn = getTotalNumInputChannels(), numOut = getTotalNumOutputChannels();
     const int total = buffer.getNumSamples();
+
+    // host tempo for the synced delay
+    if (auto* ph = getPlayHead())
+        if (auto pos = ph->getPosition())
+            if (auto bpm = pos->getBpm(); bpm.hasValue() && *bpm > 20.0 && *bpm < 400.0) hostBpm = *bpm;
     float peakIn = 0.0f, peakOut = 0.0f;
 
     for (int start = 0; start < total; start += maxBlock)
@@ -201,6 +221,8 @@ void VFXAampsProcessor::processChunk (int n) noexcept
     float* x = mono.getWritePointer (0);
     float* l = left.getWritePointer (0);
     float* r = right.getWritePointer (0);
+
+    tuner.push (x, n); // the tuner listens to the raw guitar input
 
     // --- input trim + noise gate (64-bit) ---------------------------------------------
     inTrim.setDb (pInTrim->load (std::memory_order_relaxed));
@@ -275,6 +297,36 @@ void VFXAampsProcessor::processChunk (int n) noexcept
     }
     irs.process (x, l, r, n, pIrOn->load() > 0.5f, pIrBlend->load(), ip[0], ip[1]);
 
+    // --- effects rack: graphic EQ -> delay -> reverb ----------------------------------------
+    {
+        std::array<double, vfxa::GraphicEq::kBands> bands {};
+        for (size_t b = 0; b < bands.size(); ++b) bands[b] = pEqBand[b]->load (std::memory_order_relaxed);
+        graphicEq.setGains (bands, pEqOn->load (std::memory_order_relaxed) > 0.5f);
+        graphicEq.process (l, r, n);
+
+        vfxa::StereoDelay::Params dp;
+        dp.on = pDlyOn->load (std::memory_order_relaxed) > 0.5f;
+        const bool sync = pDlySync->load (std::memory_order_relaxed) > 0.5f;
+        dp.timeMs = sync ? vfxa::params::delayDivisionBeats (static_cast<int> (pDlyDiv->load (std::memory_order_relaxed))) * 60000.0 / hostBpm
+                         : static_cast<double> (pDlyTime->load (std::memory_order_relaxed));
+        dp.timeMs = std::min (dp.timeMs, vfxa::StereoDelay::kMaxSeconds * 1000.0);
+        delayTimeMs.store (static_cast<float> (dp.timeMs), std::memory_order_relaxed);
+        dp.feedback = pDlyFb->load (std::memory_order_relaxed);
+        dp.mix = pDlyMix->load (std::memory_order_relaxed);
+        dp.toneHz = pDlyTone->load (std::memory_order_relaxed);
+        dp.pingPong = pDlyPing->load (std::memory_order_relaxed) > 0.5f;
+        delay.process (l, r, n, dp);
+
+        vfxa::FdnReverb::Params rp;
+        rp.on = pRvbOn->load (std::memory_order_relaxed) > 0.5f;
+        rp.size = pRvbSize->load (std::memory_order_relaxed);
+        rp.decayS = pRvbDecay->load (std::memory_order_relaxed);
+        rp.preDelayMs = pRvbPre->load (std::memory_order_relaxed);
+        rp.toneHz = pRvbTone->load (std::memory_order_relaxed);
+        rp.mix = pRvbMix->load (std::memory_order_relaxed);
+        reverb.process (l, r, n, rp);
+    }
+
     // --- output level + limiter (optionally oversampled) ----------------------------------
     outGain.setDb (pOut->load (std::memory_order_relaxed));
     limitEnable.setTarget (pLimiter->load (std::memory_order_relaxed) > 0.5f ? 1.0 : 0.0);
@@ -335,6 +387,18 @@ void VFXAampsProcessor::processChunk (int n) noexcept
         {
             applyOversamplingChoice (wantedOs);
             switchFade.setTarget (1.0);
+        }
+    }
+
+    // --- mute while tuning --------------------------------------------------------------
+    tunerGate.setTarget (tunerMute.load (std::memory_order_relaxed) ? 0.0 : 1.0);
+    if (tunerGate.isSmoothing() || tunerGate.getCurrent() < 1.0)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            const double g = tunerGate.next();
+            l[i] = static_cast<float> (l[i] * g);
+            r[i] = static_cast<float> (r[i] * g);
         }
     }
 

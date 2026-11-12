@@ -6,6 +6,8 @@
 #include "vfxa/Dynamics.h"
 #include "vfxa/Filters.h"
 #include "vfxa/MorphEngine.h"
+#include "vfxa/PostFx.h"
+#include "vfxa/Tuner.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -91,6 +93,14 @@ public:
     float getOutputPeak() const noexcept { return outPeak.load (std::memory_order_relaxed); }
     /** True once IR `which` is loaded and active in the convolution (tests / offline use). */
     bool isIrReady (int which) const noexcept { return irs.isReady (which); }
+
+    /** Tuner (message thread): pitch of the guitar input right now. */
+    vfxa::TunerReading analyseTuner() { return tuner.analyse(); }
+    /** Mute the output while tuning (not saved with the session). */
+    void setTunerMute (bool m) noexcept { tunerMute.store (m); }
+    bool isTunerMuted() const noexcept { return tunerMute.load(); }
+    /** Delay time actually in use, in ms (follows the host tempo when synced). */
+    float getDelayTimeMs() const noexcept { return delayTimeMs.load (std::memory_order_relaxed); }
     float getInputPeak() const noexcept { return inPeak.load (std::memory_order_relaxed); }
 
     juce::AudioProcessorValueTreeState apvts;
@@ -112,6 +122,14 @@ private:
 
     vfxa::MorphEngine engine;
     vfxa::DualIr irs;
+    vfxa::GraphicEq graphicEq;
+    vfxa::StereoDelay delay;
+    vfxa::FdnReverb reverb;
+    vfxa::Tuner tuner;
+    std::atomic<bool> tunerMute { false };
+    vfxa::LinearSmoother tunerGate;
+    double hostBpm = 120.0;
+    std::atomic<float> delayTimeMs { 400.0f };
     vfxa::NoiseGate gate;
     vfxa::Limiter limiterL;
     std::array<vfxa::ToneStack, 3> tone;   // at 1x, 2x, 4x
@@ -134,6 +152,10 @@ private:
     std::array<std::atomic<float>*, vfxa::kNumSlots> pSlotTrim {};
     struct IrParamPtrs { std::atomic<float>* on, * level, * pan, * phase, * delay, * lowcut, * highcut; };
     std::array<IrParamPtrs, kNumIrs> pIr {};
+    std::atomic<float>* pEqOn = nullptr, * pDlyOn = nullptr, * pDlyTime = nullptr, * pDlySync = nullptr, * pDlyDiv = nullptr,
+                      * pDlyFb = nullptr, * pDlyMix = nullptr, * pDlyTone = nullptr, * pDlyPing = nullptr,
+                      * pRvbOn = nullptr, * pRvbSize = nullptr, * pRvbDecay = nullptr, * pRvbPre = nullptr, * pRvbTone = nullptr, * pRvbMix = nullptr;
+    std::array<std::atomic<float>*, vfxa::GraphicEq::kBands> pEqBand {};
 
     juce::AudioProcessLoadMeasurer loadMeasurer;
     std::atomic<float> outPeak { 0.0f }, inPeak { 0.0f };

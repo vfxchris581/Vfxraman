@@ -433,10 +433,20 @@ static void testEditorSnapshot (const File& outDir)
     p.waitForLoads (20000);
     setParam (p, vfxa::params::morph, 2.4f);
     setParam (p, vfxa::params::gateOn, 1.0f);
-    run (p, sine (48000, 0.3, 110.0), 256); // so the slot glow / meters have values
+    namespace P = vfxa::params;
+    setParam (p, P::eqOn, 1.0f);
+    const float eqShape[] { 3.0f, 2.0f, 0.5f, -1.5f, -3.0f, -1.0f, 1.5f, 3.5f, 2.0f, -2.0f };
+    for (int b = 0; b < 10; ++b) setParam (p, P::eqBand (b), eqShape[b]);
+    setParam (p, P::dlyOn, 1.0f);
+    setParam (p, P::dlyTime, 375.0f);
+    setParam (p, P::rvbOn, 1.0f);
+    setParam (p, P::rvbDecay, 3.4f);
+    setParam (p, P::rvbSize, 0.7f);
+    run (p, sine (48000, 0.3, 110.0 * std::pow (2.0, 7.0 / 1200.0)), 256); // slot glow / meters, and A2 +7 cents on the tuner
 
     std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
-    ed->setSize (1240, 760);
+    if (auto* e = dynamic_cast<VFXAampsEditor*> (ed.get())) e->setRackShown (true);
+    ed->setSize (1240, juce::roundToInt (1240.0 * ed->getHeight() / ed->getWidth()));
     for (auto [w, name] : { std::pair<int, const char*> { ed->getWidth(), "vfxaamps-ui.png" }, { 1600, "vfxaamps-ui-large.png" } })
     {
         ed->setSize (w, juce::roundToInt (w * static_cast<double> (ed->getHeight()) / ed->getWidth()));
@@ -450,6 +460,76 @@ static void testEditorSnapshot (const File& outDir)
         CHECK (os.openedOk() && png.writeImageToStream (img, os), "write %s", name);
         std::printf ("  wrote %s (%dx%d)\n", f.getFullPathName().toRawUTF8(), img.getWidth(), img.getHeight());
     }
+    if (auto* e = dynamic_cast<VFXAampsEditor*> (ed.get()))
+    {
+        e->setRackShown (false);
+        CHECK (std::abs (ed->getHeight() * 1240 - ed->getWidth() * 760) <= 1240, "rack hidden: amp-only size %dx%d", ed->getWidth(), ed->getHeight());
+        ed->setSize (1240, 760);
+        e->timerCallback();
+        const auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+        juce::PNGImageFormat png;
+        const auto f = outDir.getChildFile ("vfxaamps-ui-amp-only.png");
+        f.deleteFile();
+        juce::FileOutputStream os (f);
+        CHECK (os.openedOk() && png.writeImageToStream (img, os), "write amp-only snapshot");
+        e->setRackShown (true);
+    }
+}
+
+//==============================================================================
+static void testEffectsRack()
+{
+    std::printf ("Effects rack + tuner through the processor\n");
+    namespace P = vfxa::params;
+    const double fs = 48000;
+    VFXAampsProcessor p;
+    makeNeutral (p);
+    p.prepareToPlay (fs, 480);
+    // synced delay: 1/4 note at the default 120 BPM (no host tempo here) = 500 ms
+    setParam (p, P::dlyOn, 1.0f);
+    setParam (p, P::dlySync, 1.0f);
+    setParam (p, P::dlyDiv, 3.0f);
+    setParam (p, P::dlyMix, 1.0f);
+    setParam (p, P::dlyFeedback, 0.0f);
+    setParam (p, P::dlyTone, 20000.0f);
+    run (p, std::vector<float> (4800, 0.0f), 480);
+    std::vector<float> imp (static_cast<size_t> (fs * 1.0), 0.0f);
+    imp[1000] = 0.5f;
+    auto o = run (p, imp, 480);
+    CHECK (std::fabs (p.getDelayTimeMs() - 500.0f) < 0.01f, "1/4 at 120 BPM = %.1f ms", p.getDelayTimeMs());
+    int echo = 0;
+    for (int i = 2000; i < static_cast<int> (o.l.size()); ++i) if (std::fabs (o.l[static_cast<size_t> (i)]) > std::fabs (o.l[static_cast<size_t> (echo)])) echo = i;
+    CHECK (echo == 1000 + 24000 && std::fabs (o.l[static_cast<size_t> (echo)]) > 0.4f, "delay echo at sample %d (want 25000), level %.3f", echo, o.l[static_cast<size_t> (echo)]);
+
+    // reverb adds a tail; EQ boost raises the level at its band
+    setParam (p, P::dlyOn, 0.0f);
+    setParam (p, P::rvbOn, 1.0f);
+    setParam (p, P::rvbMix, 1.0f);
+    run (p, std::vector<float> (static_cast<size_t> (fs * 1.5), 0.0f), 480); // delay trails die away
+    o = run (p, imp, 480);
+    CHECK (rms (o.l, 6000, 30000) > 1e-3 && rms (o.r, 6000, 30000) > 1e-3, "reverb tail L %.4f R %.4f", rms (o.l, 6000, 30000), rms (o.r, 6000, 30000));
+    setParam (p, P::rvbOn, 0.0f);
+    run (p, std::vector<float> (static_cast<size_t> (fs * 30.0), 0.0f), 4800);
+    setParam (p, P::eqOn, 1.0f);
+    setParam (p, P::eqBand (5), 12.0f);
+    const auto x = sine (fs, 1.0, 1000.0);
+    o = run (p, x, 480);
+    const double boost = 20.0 * std::log10 (rms (o.l, 24000, 48000) / rms (x, 24000, 48000));
+    CHECK (std::fabs (boost - 12.0) < 0.5, "EQ 1K +12 dB measures %+.2f dB through the processor", boost);
+
+    // tuner hears the input, and mute-while-tuning silences the output
+    setParam (p, P::eqOn, 0.0f);
+    const auto e2 = sine (fs, 0.5, 82.41);
+    run (p, e2, 480);
+    const auto rd = p.analyseTuner();
+    CHECK (rd.valid && rd.midiNote == 40 && std::fabs (rd.cents) < 1.5, "tuner reads E2 (%s%d %+.2f ct)", vfxa::TunerReading::noteName (rd.midiNote), rd.octave(), rd.cents);
+    p.setTunerMute (true);
+    o = run (p, e2, 480);
+    CHECK (rms (o.l, 4800, o.l.size()) < 1e-6, "muted while tuning (rms %.2g)", rms (o.l, 4800, o.l.size()));
+    double step = 0;
+    for (size_t i = 1; i < 2000; ++i) step = std::max (step, (double) std::fabs (o.l[i] - o.l[i - 1]));
+    CHECK (step < 0.02, "mute fades without a click (max step %.4f)", step);
+    p.setTunerMute (false);
 }
 
 int main (int argc, char** argv)
@@ -461,6 +541,7 @@ int main (int argc, char** argv)
     testIr();
     testMorphThroughProcessor();
     testStateAndPresets();
+    testEffectsRack();
     testEditorSnapshot (shots);
     std::printf ("\n%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

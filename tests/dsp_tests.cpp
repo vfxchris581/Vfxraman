@@ -24,6 +24,8 @@ static int failures = 0, checks = 0;
 #define CHECK(cond, ...) do { ++checks; if (! (cond)) { ++failures; std::printf ("  FAIL %s:%d  %s  ", __FILE__, __LINE__, #cond); std::printf (__VA_ARGS__); std::printf ("\n"); } } while (0)
 
 static const double pi = 3.14159265358979323846;
+
+#include "postfx_tests.h"
 static std::string model (const char* name) { return std::string (VFXA_EXAMPLE_MODELS) + "/" + name; }
 
 /** Guitar-like test signal: plucked notes (decaying harmonics), mostly in the guitar range. */
@@ -495,6 +497,7 @@ int main()
     testSingleSlotExact();
     testMorphAgainstReference();
     testMorphStress();
+    testPostFx();
     std::printf ("\n%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }
