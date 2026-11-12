@@ -219,6 +219,18 @@ static void testIr()
         p.prepareToPlay (fs, 480);
     };
 
+    // Loaded after the app has been running a while (the IR channel has gone idle): must still switch on.
+    {
+        VFXAampsProcessor p; fresh (p);
+        run (p, std::vector<float> (static_cast<size_t> (fs * 2.0), 0.0f), 480); // 2 s with no IR
+        p.loadAsset (VFXAampsProcessor::irAsset (1), irLate);
+        waitForIrs (p, { 1 }, fs, 480);
+        CHECK (p.isIrReady (1), "IR B loaded after 2 s idle becomes active");
+        std::vector<float> imp (4800, 0.0f); imp[1000] = 1.0f;
+        const auto o = run (p, imp, 480);
+        CHECK (peakIndex (o.l) == 1020, "late-loaded IR is applied (peak at %d, want 1020)", peakIndex (o.l));
+    }
+
     // A only (B empty): plays at full level regardless of blend
     {
         VFXAampsProcessor p; fresh (p);

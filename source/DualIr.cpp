@@ -129,9 +129,12 @@ double IrChannel::readDelay (const float* buf, double d) const noexcept
 void IrChannel::process (const float* in, float* outL, float* outR, int n, const IrParams& p, double weight) noexcept
 {
     const bool active = p.on && isReady();
+    // A newly loaded IR is only installed by JUCE while the convolution is running, so keep running it
+    // (silently: gain stays at 0) until our IR is in, even if this channel had gone idle.
+    const bool pending = loaded.load (std::memory_order_relaxed) && ! isReady();
     gain.setTarget (active ? GainSmoother::dbToGain (p.levelDb) * weight : 0.0);
 
-    if (! active && ! gain.isSmoothing() && gain.getCurrent() == 0.0)
+    if (! active && ! pending && ! gain.isSmoothing() && gain.getCurrent() == 0.0)
     {
         // Silent: stop running the convolution after its tail has died away.
         idleSamples += n;
@@ -141,7 +144,7 @@ void IrChannel::process (const float* in, float* outL, float* outR, int n, const
     {
         idleSamples = 0;
     }
-    if (needsReset && active) reset(); // restart from silence (we fade in from zero anyway)
+    if (needsReset && (active || pending)) reset(); // restart from silence (we fade in from zero anyway)
     if (needsReset) return;
 
     panPos.setTarget (juce::jlimit (-1.0, 1.0, static_cast<double> (p.pan)));
