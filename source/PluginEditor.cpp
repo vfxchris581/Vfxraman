@@ -1,6 +1,7 @@
 // VFXAamps — amp-head editor.
 
 #include "PluginEditor.h"
+#include "VFXAampsAssets.h"
 
 namespace vfxa::ui
 {
@@ -49,6 +50,8 @@ void AmpFace::RelinkBanner::resized()
 //==============================================================================
 AmpFace::AmpFace (VFXAampsProcessor& p) : proc (p)
 {
+    logoTree = ImageCache::getFromMemory (VFXAampsAssets::logotree_png, VFXAampsAssets::logotree_pngSize);
+    logoWord = ImageCache::getFromMemory (VFXAampsAssets::logowordmark_png, VFXAampsAssets::logowordmark_pngSize);
     namespace P = vfxa::params;
     auto& s = proc.apvts;
     inTrim.setup (*this, s, P::inTrim, "INPUT", KnobStyle::ChickenHead);
@@ -300,19 +303,27 @@ void AmpFace::paintBackground (Graphics& g)
 
     // header: logo, pilot light, CPU meter
     {
-        auto logo = Rectangle<float> (64.0f, 40.0f, 430.0f, 52.0f);
-        const auto font = Font (FontOptions (46.0f, Font::bold | Font::italic)).withHorizontalScale (1.05f).withExtraKerningFactor (-0.01f);
-        GlyphArrangement ga;
-        ga.addLineOfText (font, "VFXAamps", logo.getX(), logo.getBottom() - 10.0f);
-        Path text;
-        ga.createPath (text);
-        g.setColour (Colour (0x90000000));
-        g.fillPath (text, AffineTransform::translation (1.5f, 2.5f));
-        g.setGradientFill (ColourGradient (Colour (0xff2b2d32), logo.getTopLeft(), Colour (0xff0e0f11), logo.getBottomLeft(), false));
-        g.fillPath (text);
-        g.setColour (Colour (0x40ffffff));
-        g.strokePath (text, PathStrokeType (0.8f));
-        AmpLookAndFeel::drawEngraved (g, "NEURAL AMP HEAD  /  10-SLOT MORPH  /  DUAL IR", { 300.0f, 64.0f, 260.0f, 16.0f }, 9.5f, Justification::centredLeft);
+        // Nameplate badge: navy plate with the tree and the VFXAamps lettering.
+        const auto badge = Rectangle<float> (56.0f, 42.0f, 188.0f, 46.0f);
+        g.setColour (Colour (0x60000000));
+        g.fillRoundedRectangle (badge.translated (0.0f, 2.0f).expanded (1.0f), 7.0f);
+        g.setGradientFill (ColourGradient (Colour (0xff1a2a52), badge.getTopLeft(), Colour (0xff0b1430), badge.getBottomLeft(), false));
+        g.fillRoundedRectangle (badge, 6.0f);
+        g.setGradientFill (ColourGradient (Colour (0xffe8eaee), badge.getTopLeft(), Colour (0xff6b7079), badge.getBottomLeft(), false));
+        g.drawRoundedRectangle (badge.reduced (0.6f), 6.0f, 1.2f);
+        g.setColour (Colour (0x26ffffff));
+        g.drawLine (badge.getX() + 8.0f, badge.getY() + 2.0f, badge.getRight() - 8.0f, badge.getY() + 2.0f, 0.8f);
+        const auto treeBox = Rectangle<float> (badge.getX() + 7.0f, badge.getY() + 4.0f, 38.0f, 38.0f);
+        g.setImageResamplingQuality (Graphics::highResamplingQuality);
+        if (logoTree.isValid())
+            g.drawImage (logoTree, treeBox, RectanglePlacement::centred);
+        if (logoWord.isValid())
+        {
+            const float wh = 26.0f, ww = wh * static_cast<float> (logoWord.getWidth()) / static_cast<float> (logoWord.getHeight());
+            const auto wordBox = Rectangle<float> (treeBox.getRight() + 7.0f, badge.getCentreY() - wh * 0.5f, ww, wh);
+            g.drawImage (logoWord, wordBox, RectanglePlacement::centred);
+        }
+        AmpLookAndFeel::drawEngraved (g, "NEURAL AMP HEAD  /  10-SLOT MORPH  /  DUAL IR", { 256.0f, 57.0f, 290.0f, 16.0f }, 9.5f, Justification::centredLeft);
     }
     {
         const Point<float> pc { faceplate.getRight() - 52.0f, 65.0f };

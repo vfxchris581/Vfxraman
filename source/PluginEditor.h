@@ -56,6 +56,7 @@ private:
 
     std::unique_ptr<juce::FileChooser> chooser;
     juce::Image tolex, metal;
+    juce::Image logoTree, logoWord;  // brand artwork (resources/logo-*.png)
     float textureScale = 0.0f;
     std::array<float, vfxa::kNumSlots> levels {};
     float cpu = 0.0f, inPeak = 0.0f;

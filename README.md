@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.png" alt="VFXAamps" width="560"></p>
+
 # VFXAamps — NAM amp head
 
 A professional Neural Amp Modeler amp head with a **10-slot morphing gain knob** and a **dual IR loader**.

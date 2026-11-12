@@ -26,6 +26,13 @@ juce_add_plugin(VFXAamps
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT  "VFXAamps uses your audio interface input for your guitar.")
 
+juce_add_binary_data(VFXAampsAssets
+    HEADER_NAME VFXAampsAssets.h
+    NAMESPACE   VFXAampsAssets
+    SOURCES
+        ../resources/logo-tree.png
+        ../resources/logo-wordmark.png)
+
 set(VFXA_PLUGIN_SOURCES
     PluginProcessor.cpp
     PluginEditor.cpp
@@ -48,6 +55,7 @@ target_compile_definitions(VFXAamps PUBLIC ${VFXA_JUCE_DEFS})
 target_link_libraries(VFXAamps
     PRIVATE
         vfxa_dsp
+        VFXAampsAssets
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC
@@ -64,6 +72,6 @@ if(VFXA_BUILD_TESTS)
         VFXA_EXAMPLE_MODELS="${VFXA_NAM_DIR}/example_models"
         JucePlugin_Name="VFXAamps")
     target_link_libraries(VFXAampsPluginTests PRIVATE
-        vfxa_dsp juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
+        vfxa_dsp VFXAampsAssets juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
     add_test(NAME plugin_tests COMMAND VFXAampsPluginTests)
 endif()
