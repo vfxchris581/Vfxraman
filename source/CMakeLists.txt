@@ -39,7 +39,8 @@ set(VFXA_PLUGIN_SOURCES
     DualIr.cpp
     ui/AmpLookAndFeel.cpp
     ui/AmpComponents.cpp
-    ui/Rack.cpp)
+    ui/Rack.cpp
+    ui/Pedals.cpp)
 
 target_sources(VFXAamps PRIVATE ${VFXA_PLUGIN_SOURCES})
 target_include_directories(VFXAamps PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

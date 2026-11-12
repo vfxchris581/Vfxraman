@@ -5,6 +5,7 @@
 #include "ui/AmpComponents.h"
 #include "ui/AmpLookAndFeel.h"
 #include "ui/Rack.h"
+#include "ui/Pedals.h"
 
 namespace vfxa::ui
 {
@@ -44,7 +45,7 @@ private:
     juce::TextButton presetButton, saveButton { "SAVE" };
 public:
     /** Shows / hides the effects rack under the amp (handled by the editor). */
-    juce::TextButton rackButton { "RACK" };
+    juce::TextButton rackButton { "RACK" }, pedalsButton { "PEDALS" };
     TunerDisplay tunerDisplay;
 private:
     std::array<std::unique_ptr<SlotCard>, vfxa::kNumSlots> slots;
@@ -83,8 +84,11 @@ public:
     void resized() override;
     void timerCallback() override;
 
-    void setRackShown (bool shown);
+    void setRackShown (bool shown) { setSectionsShown (shown, pedalsShown); }
     bool isRackShown() const noexcept { return rackShown; }
+    void setPedalsShown (bool shown) { setSectionsShown (rackShown, shown); }
+    bool isPedalsShown() const noexcept { return pedalsShown; }
+    void setSectionsShown (bool rack, bool pedals);
 
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -94,6 +98,7 @@ private:
     vfxa::ui::AmpLookAndFeel lnf;
     vfxa::ui::AmpFace face;
     vfxa::ui::Rack rack;
-    bool rackShown = true;
+    vfxa::ui::Pedalboard pedalboard;
+    bool rackShown = true, pedalsShown = true;
     juce::TooltipWindow tooltips { this, 700 };
 };

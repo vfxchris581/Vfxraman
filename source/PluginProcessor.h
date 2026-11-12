@@ -22,8 +22,14 @@ class VFXAampsProcessor : public juce::AudioProcessor,
 {
 public:
     static constexpr int kNumIrs = 2;
-    static constexpr int kNumAssets = vfxa::kNumSlots + kNumIrs; // asset index: 0..9 NAM slots, 10 = IR A, 11 = IR B
+    static constexpr int kNumPedals = 2;
+    // asset index: 0..9 NAM slots, 10 = IR A, 11 = IR B, 12 / 13 = NAM pedals 1 / 2
+    static constexpr int kNumAssets = vfxa::kNumSlots + kNumIrs + kNumPedals;
     static int irAsset (int which) noexcept { return vfxa::kNumSlots + which; }
+    static int pedalAsset (int which) noexcept { return vfxa::kNumSlots + kNumIrs + which; }
+    static bool isPedalAsset (int asset) noexcept { return asset >= vfxa::kNumSlots + kNumIrs && asset < kNumAssets; }
+    /** 0..1: how much of the pedal is in the signal right now (on/off fade) - for its LED. */
+    float getPedalLevel (int which) const noexcept { return pedalMeter[static_cast<size_t> (which)].load (std::memory_order_relaxed); }
 
     VFXAampsProcessor();
     ~VFXAampsProcessor() override;
@@ -105,6 +111,8 @@ public:
     float getDelayTimeMs() const noexcept { return delayTimeMs.load (std::memory_order_relaxed); }
     /** Message thread (normally from the timer): applies slot IR switches set by capture metadata after a load. */
     void applyPendingSlotIrSwitches();
+    /** Latency the processor wants to report right now (the host is updated from the timer). */
+    int getWantedLatency() const noexcept { return latencyWanted.load (std::memory_order_relaxed); }
     float getInputPeak() const noexcept { return inPeak.load (std::memory_order_relaxed); }
 
     juce::AudioProcessorValueTreeState apvts;
@@ -130,6 +138,21 @@ private:
     vfxa::StereoDelay delay;
     vfxa::FdnReverb reverb;
     vfxa::Tuner tuner;
+    struct Pedal
+    {
+        vfxa::MorphEngine engine;                // one slot used; handles the capture's sample rate
+        std::atomic<bool> hasModel { false };
+        vfxa::LinearSmoother mix;                // 0 = bypassed (dry), 1 = on
+        vfxa::GainSmoother level;
+        vfxa::fxdetail::DelayLine dry;           // dry path delayed to match the engine's latency
+        std::vector<float> wet;
+        bool running = false;                    // engine runs only with a capture loaded (no added latency otherwise)
+        vfxa::LinearSmoother gate;               // brief fade when running starts / stops and the latency changes
+        int hold = 0;                            // samples to stay silent after starting (engine history settles)
+    };
+    std::array<Pedal, kNumPedals> pedals;
+    vfxa::MorphEngine::BlockParams pedalParams;  // morph 1 = slot 0 only
+    std::array<std::atomic<float>, kNumPedals> pedalMeter {};
     std::atomic<bool> tunerMute { false };
     vfxa::LinearSmoother tunerGate;
     double hostBpm = 120.0;
@@ -161,6 +184,7 @@ private:
                       * pRvbOn = nullptr, * pRvbSize = nullptr, * pRvbDecay = nullptr, * pRvbPre = nullptr, * pRvbTone = nullptr, * pRvbMix = nullptr;
     std::array<std::atomic<float>*, vfxa::GraphicEq::kBands> pEqBand {};
     std::array<std::atomic<float>*, vfxa::kNumSlots> pSlotIr {};
+    std::array<std::atomic<float>*, kNumPedals> pPedalOn {}, pPedalLevel {};
     std::array<std::atomic<int>, vfxa::kNumSlots> pendingSlotIr {}; // 0 none, 1 set on, 2 set off (message thread applies)
 
     juce::AudioProcessLoadMeasurer loadMeasurer;

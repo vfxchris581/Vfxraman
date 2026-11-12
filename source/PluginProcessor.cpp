@@ -13,7 +13,7 @@ std::atomic<float>* param (juce::AudioProcessorValueTreeState& s, const juce::St
     return p;
 }
 
-bool isModelAsset (int asset) noexcept { return asset < vfxa::kNumSlots; }
+bool isModelAsset (int asset) noexcept { return asset < vfxa::kNumSlots || VFXAampsProcessor::isPedalAsset (asset); }
 
 const juce::Identifier assetsId ("Assets"), assetId ("Asset"), indexId ("index"), pathId ("path"),
                        relHomeId ("relHome"), relBaseId ("relBase");
@@ -45,6 +45,12 @@ VFXAampsProcessor::VFXAampsProcessor()
     pRvbTone = param (apvts, P::rvbTone);     pRvbMix = param (apvts, P::rvbMix);
     for (int k = 0; k < vfxa::kNumSlots; ++k) pSlotTrim[static_cast<size_t> (k)] = param (apvts, P::slotTrim (k));
     for (int k = 0; k < vfxa::kNumSlots; ++k) { pSlotIr[static_cast<size_t> (k)] = param (apvts, P::slotIr (k)); pendingSlotIr[static_cast<size_t> (k)].store (0); }
+    for (int k = 0; k < kNumPedals; ++k)
+    {
+        pPedalOn[static_cast<size_t> (k)] = param (apvts, P::pedalOn (k));
+        pPedalLevel[static_cast<size_t> (k)] = param (apvts, P::pedalLevel (k));
+        pedalMeter[static_cast<size_t> (k)].store (0.0f);
+    }
     for (int w = 0; w < kNumIrs; ++w)
         pIr[static_cast<size_t> (w)] = { param (apvts, P::ir (w, "on")),    param (apvts, P::ir (w, "level")),
                                          param (apvts, P::ir (w, "pan")),   param (apvts, P::ir (w, "phase")),
@@ -105,6 +111,19 @@ void VFXAampsProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
         }
     }
     limiterL.prepare (sampleRate);
+    for (auto& pd : pedals)
+    {
+        pd.engine.prepare (sampleRate, maxBlock);
+        pd.mix.prepare (sampleRate, 0.020);
+        pd.mix.snap (0.0);
+        pd.level.prepare (sampleRate, 0.020);
+        pd.dry.prepare (8192);
+        pd.wet.assign (static_cast<size_t> (std::max (1, maxBlock)), 0.0f);
+        pd.running = pd.hasModel.load();
+        pd.gate.prepare (sampleRate, 0.005);
+        pd.gate.snap (1.0);
+        pd.hold = 0;
+    }
     graphicEq.prepare (sampleRate);
     delay.prepare (sampleRate);
     reverb.prepare (sampleRate);
@@ -142,6 +161,7 @@ void VFXAampsProcessor::applyOversamplingChoice (int choice) noexcept
 int VFXAampsProcessor::computeLatency() const noexcept
 {
     int l = engine.latencySamples();
+    for (const auto& pd : pedals) if (pd.running) l += pd.engine.latencySamples(); // 0 at 48 kHz
     if (activeOs > 0)
         l += juce::roundToInt (osTone[static_cast<size_t> (activeOs)]->getLatencyInSamples())
            + juce::roundToInt (osLim[static_cast<size_t> (activeOs)]->getLatencyInSamples());
@@ -159,6 +179,7 @@ void VFXAampsProcessor::applyPendingSlotIrSwitches()
 void VFXAampsProcessor::timerCallback()
 {
     engine.collectGarbage();
+    for (auto& pd : pedals) pd.engine.collectGarbage();
     applyPendingSlotIrSwitches();
     const int l = latencyWanted.load();
     if (l != getLatencySamples()) setLatencySamples (l);
@@ -246,6 +267,67 @@ void VFXAampsProcessor::processChunk (int n) noexcept
         const double e = gateEnable.next();
         v *= 1.0 - e * (1.0 - g);
         x[i] = static_cast<float> (v);
+    }
+
+    // --- NAM pedals 1 and 2 (in front of the amp) ------------------------------------------
+    pedalParams.normalize = false; // keep the capture's own gain: how hard a boost hits the amp matters
+    for (int k = 0; k < kNumPedals; ++k)
+    {
+        auto& pd = pedals[static_cast<size_t> (k)];
+        const bool has = pd.hasModel.load (std::memory_order_relaxed);
+
+        // Start / stop the engine with the capture. Away from 48 kHz that changes the latency, so the signal
+        // fades out, the change happens in silence, and it fades back in once the engine's history has settled.
+        if (has != pd.running)
+        {
+            if (pd.engine.latencySamples() == 0) pd.running = has; // 48 kHz: nothing to hide
+            else
+            {
+                pd.gate.setTarget (0.0);
+                if (! pd.gate.isSmoothing() && pd.gate.getCurrent() <= 0.0)
+                {
+                    pd.running = has;
+                    pd.dry.clear();
+                    pd.hold = has ? 2 * pd.engine.latencySamples() + 64 : 0;
+                }
+            }
+        }
+        if (pd.hold <= 0 && pd.gate.getTarget() < 1.0 && has == pd.running) pd.gate.setTarget (1.0);
+
+        const bool on = has && pd.running && pPedalOn[static_cast<size_t> (k)]->load (std::memory_order_relaxed) > 0.5f;
+        pd.mix.setTarget (on ? 1.0 : 0.0);
+        pd.level.setDb (pPedalLevel[static_cast<size_t> (k)]->load (std::memory_order_relaxed));
+
+        if (pd.running)
+        {
+            // runs even when switched off, so the model is ready the moment the footswitch is pressed;
+            // the dry path is delayed to match the engine (sample-rate conversion away from 48 kHz)
+            pd.engine.process (x, pd.wet.data(), n, pedalParams);
+            const int lat = pd.engine.latencySamples();
+            for (int i = 0; i < n; ++i)
+            {
+                pd.dry.push (x[i]);
+                const double d = pd.dry.read (static_cast<double> (lat) + 1.0);
+                const double m = pd.mix.next(), g = pd.level.next();
+                x[i] = static_cast<float> (d + m * (pd.wet[static_cast<size_t> (i)] * g - d));
+            }
+        }
+        else
+        {
+            for (int i = 0; i < n; ++i) { pd.mix.next(); pd.level.next(); }
+        }
+
+        if (pd.gate.isSmoothing() || pd.gate.getCurrent() < 1.0 || pd.hold > 0)
+        {
+            for (int i = 0; i < n; ++i)
+            {
+                double g = 0.0;
+                if (pd.hold > 0) --pd.hold;
+                else g = pd.gate.next();
+                x[i] = static_cast<float> (x[i] * g);
+            }
+        }
+        pedalMeter[static_cast<size_t> (k)].store (static_cast<float> (pd.mix.getCurrent()), std::memory_order_relaxed);
     }
 
     // --- 10-slot NAM morph ----------------------------------------------------------------
@@ -500,14 +582,23 @@ void VFXAampsProcessor::loadAsset (int asset, const juce::File& file, bool fromU
             if (load.info.sampleRate > 0) detail.add (juce::String (load.info.sampleRate / 1000.0, load.info.sampleRate == 44100.0 ? 1 : 0) + " kHz");
             if (load.info.gearName().size() > 0) detail.add (juce::String (load.info.gearName()));
             const auto detailText = detail.joinIntoString ("  ");
-            if (fromUser)
+            if (fromUser && asset < vfxa::kNumSlots)
             {
                 // NAM gear types: amp, pedal, pedal_amp, preamp (no cab) / amp_cab, amp_pedal_cab, studio (cab included)
                 const juce::String gear = juce::String (load.info.gearType).toLowerCase();
                 if (gear.contains ("cab") || gear == "studio") pendingSlotIr[static_cast<size_t> (asset)].store (2);
                 else if (gear.isNotEmpty()) pendingSlotIr[static_cast<size_t> (asset)].store (1);
             }
-            engine.setSlot (asset, std::move (load));
+            if (isPedalAsset (asset))
+            {
+                auto& pd = pedals[static_cast<size_t> (asset - pedalAsset (0))];
+                pd.engine.setSlot (0, std::move (load));
+                pd.hasModel.store (true);
+            }
+            else
+            {
+                engine.setSlot (asset, std::move (load));
+            }
             setStatus (asset, [&] (AssetStatus& s) { s.loading = false; s.loaded = true; s.name = name; s.detail = detailText; s.path = file.getFullPathName(); });
         }
         else
@@ -533,7 +624,13 @@ void VFXAampsProcessor::clearAsset (int asset)
 {
     if (asset < 0 || asset >= kNumAssets) return;
     ++requestId[static_cast<size_t> (asset)]; // cancels a load in flight
-    if (isModelAsset (asset)) engine.clearSlot (asset);
+    if (isPedalAsset (asset))
+    {
+        auto& pd = pedals[static_cast<size_t> (asset - pedalAsset (0))];
+        pd.hasModel.store (false); // fades back to dry first; the engine then crossfades the model out on its own
+        pd.engine.clearSlot (0);
+    }
+    else if (isModelAsset (asset)) engine.clearSlot (asset);
     else irs.channel (asset - vfxa::kNumSlots).clear();
     setStatus (asset, [] (AssetStatus& s) { s = AssetStatus(); });
 }

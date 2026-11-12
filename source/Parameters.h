@@ -27,6 +27,9 @@ inline const juce::String oversample = "oversampling";
 inline juce::String slotTrim (int slot) { return "slotTrim" + juce::String (slot + 1); }
 /** Per-slot cab switch (parameter version 3): use the dual IR while this slot is playing. */
 inline juce::String slotIr (int slot) { return "slotIr" + juce::String (slot + 1); }
+/** NAM pedal loaders in front of the amp (parameter version 4): on/off and output level. */
+inline juce::String pedalOn (int pedal) { return "pedal" + juce::String (pedal + 1) + "On"; }
+inline juce::String pedalLevel (int pedal) { return "pedal" + juce::String (pedal + 1) + "Level"; }
 
 // Effects rack (added in parameter version 2)
 inline const juce::String eqOn        = "eqOn";
@@ -86,7 +89,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterFloat> (pid (gateRel), "Gate Release",
         NormalisableRange<float> (5.0f, 500.0f, 0.1f, 0.4f), 80.0f, AudioParameterFloatAttributes().withStringFromValueFunction (ms)));
 
-    layout.add (std::make_unique<AudioParameterFloat> (pid (morph), "Gain",
+    layout.add (std::make_unique<AudioParameterFloat> (pid (morph), "NAM VF-X",
         NormalisableRange<float> (1.0f, 10.0f, 0.0f), 1.0f, AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (v, 2); })));
     layout.add (std::make_unique<AudioParameterBool> (pid (normalize), "Normalize Models", true));
     for (int k = 0; k < 10; ++k)
@@ -152,6 +155,12 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 
     for (int k = 0; k < 10; ++k)
         layout.add (std::make_unique<AudioParameterBool> (ParameterID { slotIr (k), 3 }, "Slot " + String (k + 1) + " IR", true));
+    for (int k = 0; k < 2; ++k)
+    {
+        layout.add (std::make_unique<AudioParameterBool> (ParameterID { pedalOn (k), 4 }, "Pedal " + String (k + 1), true));
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { pedalLevel (k), 4 }, "Pedal " + String (k + 1) + " Level",
+                                                           NormalisableRange<float> (-24.0f, 24.0f, 0.01f), 0.0f, dbAttr));
+    }
     return layout;
 }
 

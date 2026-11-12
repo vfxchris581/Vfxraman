@@ -45,12 +45,14 @@ bool isIrFile (const String& path)
 
 void chooseAndLoad (VFXAampsProcessor& proc, int asset, std::unique_ptr<FileChooser>& holder)
 {
-    const bool model = asset < vfxa::kNumSlots;
+    const bool model = asset < vfxa::kNumSlots || VFXAampsProcessor::isPedalAsset (asset);
     const auto current = proc.getAssetStatus (asset).path;
     File start (proc.getSettings().getValue (model ? "lastModelDir" : "lastIrDir"));
     if (current.isNotEmpty() && File (current).getParentDirectory().isDirectory()) start = File (current).getParentDirectory();
     if (! start.isDirectory()) start = File::getSpecialLocation (File::userDocumentsDirectory);
-    holder = std::make_unique<FileChooser> (model ? "Load NAM model into slot " + String (asset + 1)
+    holder = std::make_unique<FileChooser> (model ? (VFXAampsProcessor::isPedalAsset (asset)
+                                                         ? "Load NAM pedal capture into pedal " + String (asset - VFXAampsProcessor::pedalAsset (0) + 1)
+                                                         : "Load NAM model into slot " + String (asset + 1))
                                                   : String ("Load impulse response ") + (asset == VFXAampsProcessor::irAsset (0) ? "A" : "B"),
                                             start, model ? "*.nam" : "*.wav;*.aif;*.aiff;*.flac");
     holder->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,

@@ -58,7 +58,7 @@ AmpFace::AmpFace (VFXAampsProcessor& p) : proc (p), tunerDisplay (p)
     gateThresh.setup (*this, s, P::gateThresh, "THRESH", KnobStyle::Small);
     gateRel.setup (*this, s, P::gateRel, "RELEASE", KnobStyle::Small);
     morph.setup (*this, s, P::morph, "", KnobStyle::Knurled);
-    morph.slider.setTooltip ("Gain: 1-10 morphs smoothly through the loaded models (e.g. 1.5 = slot 1 and slot 2 equally)");
+    morph.slider.setTooltip ("NAM VF-X: 1-10 morphs smoothly through the loaded models (e.g. 1.5 = slot 1 and slot 2 equally)");
     bass.setup (*this, s, P::bass, "BASS", KnobStyle::ChickenHead);
     mid.setup (*this, s, P::mid, "MIDDLE", KnobStyle::ChickenHead);
     treble.setup (*this, s, P::treble, "TREBLE", KnobStyle::ChickenHead);
@@ -124,6 +124,11 @@ AmpFace::AmpFace (VFXAampsProcessor& p) : proc (p), tunerDisplay (p)
     rackButton.setClickingTogglesState (true);
     rackButton.setTooltip ("Show or hide the effects rack (graphic EQ, delay, reverb)");
     addAndMakeVisible (rackButton);
+    pedalsButton.getProperties().set ("rack", true);
+    pedalsButton.getProperties().set ("accent", (int64) 0xffff3b2f);
+    pedalsButton.setClickingTogglesState (true);
+    pedalsButton.setTooltip ("Show or hide the pedalboard (two NAM pedal captures in front of the amp)");
+    addAndMakeVisible (pedalsButton);
 
     setSize (kWidth, kHeight);
     refreshStatus();
@@ -141,6 +146,7 @@ void AmpFace::resized()
     osBox.setBounds (866, 50, 92, 30);
     tunerDisplay.setBounds (256, 44, 292, 44);
     rackButton.setBounds (1110, slotStrip.getY() - 26, 82, 22);
+    pedalsButton.setBounds (1016, slotStrip.getY() - 26, 88, 22);
 
     // input
     place (inTrim, { 141.0f, 205.0f }, 92.0f);
@@ -382,7 +388,7 @@ void AmpFace::paintBackground (Graphics& g)
         AmpLookAndFeel::drawEngraved (g, t, panel.toFloat().removeFromTop (22.0f), 13.0f);
     };
     title ("INPUT", inputPanel);
-    title ("GAIN", gainPanel);
+    title ("NAM VF-X", gainPanel);
     title ("TONE", tonePanel);
     for (int x : { inputPanel.getRight() + 5, gainPanel.getRight() + 5 })
     {
@@ -431,8 +437,8 @@ void AmpFace::paintBackground (Graphics& g)
 
     AmpLookAndFeel::drawEngraved (g, "NAM MODEL SLOTS", { static_cast<float> (slotStrip.getX()), static_cast<float> (slotStrip.getY()) - 22.0f, 300.0f, 18.0f },
                                   12.0f, Justification::centredLeft);
-    AmpLookAndFeel::drawEngraved (g, "drop .nam files on a slot  /  turn GAIN to morph between neighbouring slots",
-                                  { 260.0f, static_cast<float> (slotStrip.getY()) - 22.0f, 836.0f, 18.0f }, 10.0f, Justification::centredRight, false);
+    AmpLookAndFeel::drawEngraved (g, "drop .nam files on a slot  /  turn NAM VF-X to morph between neighbouring slots",
+                                  { 260.0f, static_cast<float> (slotStrip.getY()) - 22.0f, 742.0f, 18.0f }, 10.0f, Justification::centredRight, false);
 }
 
 void AmpFace::paintGainScale (Graphics& g)
@@ -575,25 +581,26 @@ void AmpFace::filesDropped (const StringArray& files, int, int)
 
 //==============================================================================
 VFXAampsEditor::VFXAampsEditor (VFXAampsProcessor& p)
-    : AudioProcessorEditor (p), proc (p), face (p), rack (p)
+    : AudioProcessorEditor (p), proc (p), face (p), rack (p), pedalboard (p)
 {
     setLookAndFeel (&lnf);
     addAndMakeVisible (face);
     addAndMakeVisible (rack);
+    addAndMakeVisible (pedalboard);
     face.rackButton.onClick = [this] { setRackShown (face.rackButton.getToggleState()); };
+    face.pedalsButton.onClick = [this] { setPedalsShown (face.pedalsButton.getToggleState()); };
     setResizable (true, true);
 
     rackShown = proc.getSettings().getBoolValue ("rackShown", true);
-    face.rackButton.setToggleState (rackShown, juce::dontSendNotification);
-    rack.setVisible (rackShown);
+    pedalsShown = proc.getSettings().getBoolValue ("pedalsShown", true);
 
     using F = vfxa::ui::AmpFace;
     double scale = juce::jlimit (0.55, 1.7, proc.getSettings().getDoubleValue ("uiScale", 0.9));
-    // first open with the rack: keep the whole rig on screen
+    // first open: keep the whole rig on screen
     if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
         scale = juce::jmin (scale, 0.92 * d->userBounds.getHeight() / baseHeight());
-    scale = juce::jmax (0.55, scale);
-    setRackShown (rackShown);
+    scale = juce::jmax (0.45, scale);
+    setSectionsShown (rackShown, pedalsShown);
     setSize (juce::roundToInt (F::kWidth * scale), juce::roundToInt (baseHeight() * scale));
     proc.addChangeListener (this);
     startTimerHz (30);
@@ -607,18 +614,22 @@ VFXAampsEditor::~VFXAampsEditor()
 
 int VFXAampsEditor::baseHeight() const noexcept
 {
-    return vfxa::ui::AmpFace::kHeight + (rackShown ? vfxa::ui::Rack::kHeight : 0);
+    return vfxa::ui::AmpFace::kHeight + (rackShown ? vfxa::ui::Rack::kHeight : 0) + (pedalsShown ? vfxa::ui::Pedalboard::kHeight : 0);
 }
 
-void VFXAampsEditor::setRackShown (bool shown)
+void VFXAampsEditor::setSectionsShown (bool showRack, bool showPedals)
 {
     using F = vfxa::ui::AmpFace;
-    rackShown = shown;
-    rack.setVisible (shown);
-    face.rackButton.setToggleState (shown, juce::dontSendNotification);
-    proc.getSettings().setValue ("rackShown", shown);
+    rackShown = showRack;
+    pedalsShown = showPedals;
+    rack.setVisible (showRack);
+    pedalboard.setVisible (showPedals);
+    face.rackButton.setToggleState (showRack, juce::dontSendNotification);
+    face.pedalsButton.setToggleState (showPedals, juce::dontSendNotification);
+    proc.getSettings().setValue ("rackShown", showRack);
+    proc.getSettings().setValue ("pedalsShown", showPedals);
     const int h = baseHeight();
-    setResizeLimits (F::kWidth * 55 / 100, h * 55 / 100, F::kWidth * 170 / 100, h * 170 / 100);
+    setResizeLimits (F::kWidth * 45 / 100, h * 45 / 100, F::kWidth * 170 / 100, h * 170 / 100);
     if (auto* c = getConstrainer()) c->setFixedAspectRatio (static_cast<double> (F::kWidth) / h);
     if (getWidth() > 0) setSize (getWidth(), juce::roundToInt (getWidth() * static_cast<double> (h) / F::kWidth));
 }
@@ -629,8 +640,12 @@ void VFXAampsEditor::resized()
     const float scale = static_cast<float> (getWidth()) / static_cast<float> (F::kWidth);
     face.setTransform (juce::AffineTransform::scale (scale));
     face.setBounds (0, 0, F::kWidth, F::kHeight);
+    int y = F::kHeight;
     rack.setTransform (juce::AffineTransform::scale (scale));
-    rack.setBounds (0, F::kHeight, vfxa::ui::Rack::kWidth, vfxa::ui::Rack::kHeight);
+    rack.setBounds (0, y, vfxa::ui::Rack::kWidth, vfxa::ui::Rack::kHeight);
+    if (rackShown) y += vfxa::ui::Rack::kHeight;
+    pedalboard.setTransform (juce::AffineTransform::scale (scale));
+    pedalboard.setBounds (0, y, vfxa::ui::Pedalboard::kWidth, vfxa::ui::Pedalboard::kHeight);
     proc.getSettings().setValue ("uiScale", scale);
 }
 
@@ -638,5 +653,6 @@ void VFXAampsEditor::timerCallback()
 {
     face.tick();
     if (rackShown) rack.tick();
+    if (pedalsShown) pedalboard.tick();
 }
-void VFXAampsEditor::changeListenerCallback (juce::ChangeBroadcaster*) { face.refreshStatus(); }
+void VFXAampsEditor::changeListenerCallback (juce::ChangeBroadcaster*) { face.refreshStatus(); pedalboard.refresh(); }

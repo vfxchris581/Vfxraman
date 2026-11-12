@@ -10,9 +10,13 @@ VST3, AU (macOS) and Standalone; macOS universal (Apple Silicon + Intel) and Win
 
 ## What it does
 
-**Signal chain:** input trim → noise gate → 10-slot NAM morph → bass / middle / treble + presence → dual IR → graphic EQ → delay → reverb → master → limiter
+**Signal chain:** input trim → noise gate → NAM pedal 1 → NAM pedal 2 → 10-slot NAM morph → bass / middle / treble + presence → dual IR → graphic EQ → delay → reverb → master → limiter
 
-- **The 10-slot gain knob.** Load a `.nam` capture into each of slots 1–10 (WaveNet, LSTM, A2 / slimmable, all sizes). The big knob
+- **Pedalboard.** Two optional NAM pedal loaders in front of the amp (drop a .nam capture of a boost, overdrive, …): footswitch,
+  level, LED and name display. Off or empty, a pedal passes the guitar straight through (bit-exact). Pedal captures keep their
+  own gain (no loudness matching), so a boost pushes the amp like the real thing. A pedal only runs while it holds a capture,
+  so empty pedals add no latency at any sample rate. Show or hide the board with **PEDALS**.
+- **The 10-slot NAM VF-X knob.** Load a `.nam` capture into each of slots 1–10 (WaveNet, LSTM, A2 / slimmable, all sizes). The big knob
   runs continuously from 1.0 to 10.0 and morphs between neighbouring slots like a real amp's gain: at 1.5 you hear an
   equal-power blend of slots 1 and 2. Empty slots are skipped (with slots 2 and 5 loaded, the knob blends 2 → 5 across that range).
   No steps, gaps or clicks, and full DAW automation.

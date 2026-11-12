@@ -443,10 +443,12 @@ static void testEditorSnapshot (const File& outDir)
     setParam (p, P::rvbDecay, 3.4f);
     setParam (p, P::rvbSize, 0.7f);
     setParam (p, P::slotIr (1), 0.0f); // show one slot with its IR switched off
+    p.loadAsset (VFXAampsProcessor::pedalAsset (0), modelFile ("lstm.nam"));
+    p.waitForLoads (20000);
     run (p, sine (48000, 0.3, 110.0 * std::pow (2.0, 7.0 / 1200.0)), 256); // slot glow / meters, and A2 +7 cents on the tuner
 
     std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
-    if (auto* e = dynamic_cast<VFXAampsEditor*> (ed.get())) e->setRackShown (true);
+    if (auto* e = dynamic_cast<VFXAampsEditor*> (ed.get())) e->setSectionsShown (true, true);
     ed->setSize (1240, juce::roundToInt (1240.0 * ed->getHeight() / ed->getWidth()));
     for (auto [w, name] : { std::pair<int, const char*> { ed->getWidth(), "vfxaamps-ui.png" }, { 1600, "vfxaamps-ui-large.png" } })
     {
@@ -463,8 +465,8 @@ static void testEditorSnapshot (const File& outDir)
     }
     if (auto* e = dynamic_cast<VFXAampsEditor*> (ed.get()))
     {
-        e->setRackShown (false);
-        CHECK (std::abs (ed->getHeight() * 1240 - ed->getWidth() * 760) <= 1240, "rack hidden: amp-only size %dx%d", ed->getWidth(), ed->getHeight());
+        e->setSectionsShown (false, false);
+        CHECK (std::abs (ed->getHeight() * 1240 - ed->getWidth() * 760) <= 1240, "rack + pedals hidden: amp-only size %dx%d", ed->getWidth(), ed->getHeight());
         ed->setSize (1240, 760);
         e->timerCallback();
         const auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
@@ -473,7 +475,7 @@ static void testEditorSnapshot (const File& outDir)
         f.deleteFile();
         juce::FileOutputStream os (f);
         CHECK (os.openedOk() && png.writeImageToStream (img, os), "write amp-only snapshot");
-        e->setRackShown (true);
+        e->setSectionsShown (true, true);
     }
 }
 
@@ -609,6 +611,99 @@ static void testSlotIrSwitches()
     CHECK (paramValue (p, P::slotIr (3)) > 0.5f, "session/preset restore leaves the slot IR switch alone");
 }
 
+//==============================================================================
+static void testPedals()
+{
+    std::printf ("NAM pedals in front of the amp\n");
+    namespace P = vfxa::params;
+    const double fs = 48000;
+    VFXAampsProcessor p;
+    makeNeutral (p);
+    p.prepareToPlay (fs, 480);
+    const auto x = sine (fs, 1.0, 196.0, 0.2);
+
+    // empty pedals (switched on) pass the guitar straight through
+    auto o = run (p, x, 480);
+    bool exact = true;
+    for (size_t i = 0; i < x.size(); ++i) exact &= o.l[i] == x[i];
+    CHECK (exact, "empty pedals: bit-exact passthrough");
+
+    p.loadAsset (VFXAampsProcessor::pedalAsset (0), modelFile ("lstm.nam"));
+    p.waitForLoads (20000);
+    CHECK (p.getAssetStatus (VFXAampsProcessor::pedalAsset (0)).loaded, "pedal 1 loaded");
+    run (p, x, 480);
+    o = run (p, x, 480);
+    double diff = 0; for (size_t i = 24000; i < 48000; ++i) diff = std::max (diff, (double) std::fabs (o.l[i] - x[i]));
+    CHECK (diff > 0.01, "pedal 1 on shapes the sound (max diff %.3f)", diff);
+
+    setParam (p, P::pedalOn (0), 0.0f);
+    run (p, x, 480);
+    o = run (p, x, 480);
+    exact = true;
+    for (size_t i = 0; i < x.size(); ++i) exact &= o.l[i] == x[i];
+    CHECK (exact, "pedal 1 off: bit-exact passthrough");
+
+    // stomping while playing: no clicks
+    const auto pl = sine (fs, 3.0, 110.0, 0.2);
+    o = run (p, pl, 128, [&] (int b, int) { setParam (p, P::pedalOn (0), (b / 60) % 2 == 0 ? 1.0f : 0.0f); });
+    double step = 0;
+    for (size_t i = 1; i < o.l.size(); ++i) step = std::max (step, (double) std::fabs (o.l[i] - o.l[i - 1]));
+    CHECK (step < 0.06, "footswitch on/off while playing is click-free (max step %.4f)", step);
+
+    // level knob
+    setParam (p, P::pedalOn (0), 1.0f);
+    run (p, x, 480);
+    const auto a = run (p, x, 480);
+    setParam (p, P::pedalLevel (0), -6.0f);
+    run (p, x, 480);
+    const auto b = run (p, x, 480);
+    const double lv = 20.0 * std::log10 (rms (b.l, 24000, 48000) / rms (a.l, 24000, 48000));
+    CHECK (std::fabs (lv + 6.0) < 0.2, "pedal level -6 dB measures %+.2f dB", lv);
+
+    // saved with the session
+    juce::MemoryBlock state;
+    p.getStateInformation (state);
+    VFXAampsProcessor q;
+    q.prepareToPlay (fs, 480);
+    q.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
+    q.waitForLoads (20000);
+    CHECK (q.getAssetStatus (VFXAampsProcessor::pedalAsset (0)).loaded && ! q.getAssetStatus (VFXAampsProcessor::pedalAsset (1)).loaded,
+           "pedal captures restored with the session");
+    CHECK (std::fabs (paramValue (q, P::pedalLevel (0)) + 6.0f) < 0.01f, "pedal level restored");
+
+    // 44.1 kHz: a capture-rate pedal needs resampling; the reported latency must match what comes out
+    VFXAampsProcessor r;
+    makeNeutral (r);
+    r.prepareToPlay (44100.0, 441);
+    r.loadAsset (VFXAampsProcessor::pedalAsset (1), modelFile ("lstm.nam"));
+    r.waitForLoads (20000);
+    std::vector<float> imp (8820, 0.0f);
+    setParam (r, P::pedalOn (1), 0.0f);
+    run (r, std::vector<float> (44100, 0.0f), 441);
+    imp[2000] = 0.5f;
+    o = run (r, imp, 441);
+    const int lat = r.getWantedLatency();
+    CHECK (peakIndex (o.l) - 2000 == lat, "44.1 kHz, pedal off: output %d samples late, reported %d", peakIndex (o.l) - 2000, lat);
+
+    // empty pedals add no latency; loading one while playing fades through the timing change instead of clicking
+    VFXAampsProcessor e;
+    makeNeutral (e);
+    e.prepareToPlay (44100.0, 441);
+    run (e, std::vector<float> (4410, 0.0f), 441);
+    const int base = e.getWantedLatency();
+    VFXAampsProcessor amp;
+    makeNeutral (amp);
+    amp.prepareToPlay (44100.0, 441);
+    run (amp, std::vector<float> (4410, 0.0f), 441);
+    CHECK (base == amp.getWantedLatency() && base < 120, "44.1 kHz, no pedal captures: latency %d samples (amp alone %d)", base, amp.getWantedLatency());
+    const auto play = sine (44100.0, 2.0, 147.0, 0.2);
+    bool loaded = false;
+    o = run (e, play, 441, [&] (int b, int) { if (b == 50 && ! loaded) { e.loadAsset (VFXAampsProcessor::pedalAsset (0), modelFile ("lstm.nam")); e.waitForLoads (20000); loaded = true; } });
+    double jump = 0;
+    for (size_t i = 1; i < o.l.size(); ++i) jump = std::max (jump, (double) std::fabs (o.l[i] - o.l[i - 1]));
+    CHECK (jump < 0.06, "loading a pedal while playing at 44.1 kHz is click-free (max step %.4f)", jump);
+}
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -620,6 +715,7 @@ int main (int argc, char** argv)
     testStateAndPresets();
     testEffectsRack();
     testSlotIrSwitches();
+    testPedals();
     testEditorSnapshot (shots);
     std::printf ("\n%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
