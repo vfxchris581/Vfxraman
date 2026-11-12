@@ -9,6 +9,7 @@
 #include "vfxa/PostFx.h"
 #include "vfxa/StudioDelay.h"
 #include "vfxa/StudioReverb.h"
+#include "vfxa/OptoLeveler.h"
 #include "vfxa/Tuner.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -113,6 +114,14 @@ public:
     float getDelayTimeMs() const noexcept { return delayTimeMs.load (std::memory_order_relaxed); }
     /** Message thread (normally from the timer): applies slot IR switches set by capture metadata after a load. */
     void applyPendingSlotIrSwitches();
+    /** RESET on the amp head (message thread): removes the captures from all 10 slots, sets their level trims and
+        IR switches back to default, and puts BASS / MIDDLE / TREBLE / PRESENCE at 5.0. */
+    void resetAmpHead();
+    /** Compressor meters (any thread). */
+    float getCompGainReductionDb() const noexcept { return comp.getGainReductionDb(); }
+    float getCompOutputDb() const noexcept { return comp.getOutputDb(); }
+    /** Where the compressor is running now (follows the POSITION switch after a short fade). */
+    int getCompActivePosition() const noexcept { return compPosNow.load (std::memory_order_relaxed); }
     /** Latency the processor wants to report right now (the host is updated from the timer). */
     int getWantedLatency() const noexcept { return latencyWanted.load (std::memory_order_relaxed); }
     float getInputPeak() const noexcept { return inPeak.load (std::memory_order_relaxed); }
@@ -139,6 +148,10 @@ private:
     vfxa::GraphicEq graphicEq;
     vfxa::StudioDelay delay;
     vfxa::StudioReverb reverb;
+    vfxa::OptoLeveler comp;
+    std::atomic<int> compPosNow { 1 };
+    vfxa::LinearSmoother compMove;   // fades the compressor out and back in when it changes position
+    vfxa::OptoLeveler::Params compParamsFor (int position) noexcept;
     vfxa::Tuner tuner;
     struct Pedal
     {
@@ -186,7 +199,9 @@ private:
                       * pRvbOn = nullptr, * pRvbSize = nullptr, * pRvbDecay = nullptr, * pRvbPre = nullptr, * pRvbTone = nullptr, * pRvbMix = nullptr,
                       * pDlyMode = nullptr, * pDlyLowCut = nullptr, * pDlyModDepth = nullptr, * pDlyModRate = nullptr, * pDlyDuck = nullptr, * pDlyDiff = nullptr,
                       * pRvbProgram = nullptr, * pRvbDiff = nullptr, * pRvbMod = nullptr, * pRvbLowRT = nullptr, * pRvbHighRT = nullptr,
-                      * pRvbEarly = nullptr, * pRvbLowCut = nullptr, * pRvbWidth = nullptr;
+                      * pRvbEarly = nullptr, * pRvbLowCut = nullptr, * pRvbWidth = nullptr,
+                      * pCompOn = nullptr, * pCompPeak = nullptr, * pCompGain = nullptr, * pCompLimit = nullptr,
+                      * pCompEmph = nullptr, * pCompMix = nullptr, * pCompPos = nullptr;
     std::array<std::atomic<float>*, vfxa::GraphicEq::kBands> pEqBand {};
     std::array<std::atomic<float>*, vfxa::kNumSlots> pSlotIr {};
     std::array<std::atomic<float>*, kNumPedals> pPedalOn {}, pPedalLevel {};

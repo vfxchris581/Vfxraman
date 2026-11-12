@@ -200,8 +200,9 @@ void Pedalboard::resized()
 {
     if (vertical)
     {
-        p1.setBounds (16, 40, 204, 160);
-        p2.setBounds (16, 230, 204, 160);
+        const int gap = (getHeight() - 66 - 320) / 3;
+        p1.setBounds (16, 40 + gap, 204, 160);
+        p2.setBounds (16, 40 + 2 * gap + 160, 204, 160);
         return;
     }
     p1.setBounds (430, 14, 204, 160);
@@ -237,10 +238,11 @@ void Pedalboard::paintVertical (Graphics& g)
         g.setColour (Colour (0x30ffffff));
         g.strokePath (p, PathStrokeType (1.0f, PathStrokeType::curved, PathStrokeType::rounded), AffineTransform::translation (0.0f, -1.2f));
     };
-    const float j1 = 40.0f + 58.0f, j2 = 230.0f + 58.0f;
-    Path in;  in.startNewSubPath (5.0f, 46.0f);  in.cubicTo (10.0f, 70.0f, 4.0f, j1, 18.0f, j1);
-    Path mid; mid.startNewSubPath (218.0f, j1);  mid.cubicTo (262.0f, 205.0f, -26.0f, 215.0f, 18.0f, j2);
-    Path out; out.startNewSubPath (218.0f, j2);  out.cubicTo (236.0f, 300.0f, 238.0f, 30.0f, 226.0f, 4.0f);
+    const float j1 = static_cast<float> (p1.getY()) + 58.0f, j2 = static_cast<float> (p2.getY()) + 58.0f;
+    const float gapMid = 0.5f * static_cast<float> (p1.getBottom() + p2.getY());
+    Path in;  in.startNewSubPath (5.0f, 46.0f);  in.cubicTo (10.0f, j1 - 30.0f, 4.0f, j1, 18.0f, j1);
+    Path mid; mid.startNewSubPath (218.0f, j1);  mid.cubicTo (262.0f, gapMid - 5.0f, -26.0f, gapMid + 5.0f, 18.0f, j2);
+    Path out; out.startNewSubPath (218.0f, j2);  out.cubicTo (236.0f, j2 + 12.0f, 238.0f, 30.0f, 226.0f, 4.0f);
     cable (in);
     cable (mid);
     cable (out);

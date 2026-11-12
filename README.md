@@ -10,8 +10,10 @@ VST3, AU (macOS) and Standalone; macOS universal (Apple Silicon + Intel) and Win
 
 ## What it does
 
-**Signal chain:** input trim → noise gate → NAM pedal 1 → NAM pedal 2 → 10-slot NAM morph → bass / middle / treble + presence → dual IR → graphic EQ → delay → reverb → master → limiter
+**Signal chain:** input trim → noise gate → NAM pedal 1 → NAM pedal 2 → [compressor: PRE AMP] → 10-slot NAM morph → bass / middle / treble + presence → dual IR → [compressor: POST CAB] → graphic EQ → delay → reverb → [compressor: END] → master → limiter
 
+- **RESET** (amp head header): after a confirmation, removes the captures from all 10 slots (their level and IR
+  switches back to default) and sets BASS, MIDDLE, TREBLE and PRESENCE to 5.0. Pedals, IRs and the rack are untouched.
 - **Pedalboard.** Two optional NAM pedal loaders in front of the amp (drop a .nam capture of a boost, overdrive, …): footswitch,
   level, LED and name display. Off or empty, a pedal passes the guitar straight through (bit-exact). Pedal captures keep their
   own gain (no loudness matching), so a boost pushes the amp like the real thing. A pedal only runs while it holds a capture,
@@ -40,6 +42,10 @@ VST3, AU (macOS) and Standalone; macOS universal (Apple Silicon + Intel) and Win
 - **Tuner** in the header, listening to your guitar input: note, a cents needle (green within ±3 cents) and the frequency.
   Accurate to about a cent from low F# on an 8-string up to C6. Click it to mute the output while you tune.
 - **Effects rack** under the amp head, in rack-mount units (show or hide it with **RACK**):
+  - **VX-O2 tube opto leveler:** feedback leveling amp with an optical-cell model — ~10 ms attack, two-stage
+    program-dependent release (~60 ms to half, then 0.15–4 s), COMPRESS (~3:1, very soft knee) or LIMIT (~9:1), tube output
+    stage (~0.1 % THD at nominal level, mostly 2nd harmonic), flat 20 Hz–20 kHz. GAIN, PEAK REDUCTION, HF EMPHASIS, MIX,
+    analog VU meter (gain reduction / output). **POSITION** moves it: PRE AMP, POST CAB or END (click-free while playing).
   - **VX-10 graphic EQ:** 10 bands (31 Hz – 16 kHz, ±12 dB) on faders, a live response curve, FLAT to reset.
   - **VX-D8 studio multi-delay:** six modes — DIGITAL (pristine), TAPE (wow, flutter, saturation, repeats darken), ANALOG
     (warm bucket-brigade style), MOD (chorused repeats), REVERSE (each stretch of playing comes back backwards) and DUAL
@@ -51,8 +57,8 @@ VST3, AU (macOS) and Standalone; macOS universal (Apple Silicon + Intel) and Win
     separate LOW and HIGH DECAY multipliers (lows ring longer, highs darken), pre-delay, size, diffusion, modulation, early
     reflections level, low cut / high cut, width and mix. Stable at any setting; the tail rings out when switched off.
 
-  These are original algorithms built to the standard of top studio rack units; they are not copies of any manufacturer's
-  products.
+  These are original algorithms built to the standard of top studio rack units, tuned to the published behaviour of the
+  classics; they are not copies of any manufacturer's products.
 - **Amp-head UI.** Resizable, vector-drawn: tolex and brushed metal, chicken-head and knurled knobs, pilot light, a glowing ring and
   slot lamps showing which two slots are blending, CPU meter. Drag `.nam` files onto slots (several fill the following slots) and IRs
   onto IR A / B, or anywhere on the faceplate.

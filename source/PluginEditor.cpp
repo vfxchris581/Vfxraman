@@ -118,6 +118,23 @@ AmpFace::AmpFace (VFXAampsProcessor& p) : proc (p), tunerDisplay (p)
                               });
     };
 
+    addAndMakeVisible (resetButton);
+    resetButton.setTooltip ("Reset the amp head: removes the captures from all 10 slots and sets BASS, MIDDLE, TREBLE and PRESENCE to 5.0");
+    resetButton.onClick = [this]
+    {
+        juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                          .withIconType (juce::MessageBoxIconType::QuestionIcon)
+                                          .withTitle ("Reset the amp head?")
+                                          .withMessage ("This removes the captures from all 10 slots (their level and IR switches go back to default) "
+                                                        "and sets BASS, MIDDLE, TREBLE and PRESENCE to 5.0.\n\nPedals, IRs and the rack are not changed.")
+                                          .withButton ("Reset")
+                                          .withButton ("Cancel")
+                                          .withAssociatedComponent (this),
+                                      [safe = juce::Component::SafePointer<AmpFace> (this)] (int result)
+                                      {
+                                          if (result == 1 && safe != nullptr) safe->proc.resetAmpHead();
+                                      });
+    };
     addAndMakeVisible (tunerDisplay);
     rackButton.getProperties().set ("rack", true);
     rackButton.getProperties().set ("accent", (int64) 0xff23ded9);
@@ -141,9 +158,10 @@ void AmpFace::resized()
     auto place = [] (Knob& k, Point<float> c, float size) { k.slider.setBounds (Rectangle<float> (size, size).withCentre (c).toNearestInt()); };
 
     // header
-    presetButton.setBounds (560, 50, 230, 30);
-    saveButton.setBounds (796, 50, 60, 30);
-    osBox.setBounds (866, 50, 92, 30);
+    presetButton.setBounds (560, 50, 168, 30);
+    saveButton.setBounds (734, 50, 60, 30);
+    resetButton.setBounds (800, 50, 62, 30);
+    osBox.setBounds (868, 50, 92, 30);
     tunerDisplay.setBounds (256, 44, 292, 44);
     rackButton.setBounds (1110, slotStrip.getY() - 26, 82, 22);
     pedalsButton.setBounds (1016, slotStrip.getY() - 26, 88, 22);

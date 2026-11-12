@@ -5,6 +5,7 @@
 #include "vfxa/PostFx.h"
 #include "vfxa/StudioDelay.h"
 #include "vfxa/StudioReverb.h"
+#include "vfxa/OptoLeveler.h"
 #include "vfxa/Tuner.h"
 
 #include <algorithm>
@@ -404,10 +405,155 @@ static void testTuner()
     CHECK (! t.analyse().valid, "no reading on silence");
 }
 
+
+static void testOptoLeveler()
+{
+    using namespace postfx_tests;
+    using C = vfxa::OptoLeveler;
+    std::printf ("Opto leveling amp (VX-O2)\n");
+    const double fs = 48000.0;
+    auto runMono = [&] (C& c, std::vector<float>& y, const C::Params& p, std::vector<double>* gr = nullptr)
+    {
+        for (size_t i = 0; i < y.size(); i += 48)
+        {
+            c.process (y.data() + i, nullptr, static_cast<int> (std::min<size_t> (48, y.size() - i)), p);
+            if (gr) gr->push_back (c.getGainReductionDb());
+        }
+    };
+    auto dbRms = [] (const std::vector<float>& v, size_t a, size_t b) { return 20.0 * std::log10 (rmsOf (v, a, b) + 1e-30); };
+
+    // off: bit-exact
+    {
+        C c; c.prepare (fs);
+        auto x = tone (fs, 0.5, 440.0); auto y = x;
+        C::Params p; p.active = false;
+        runMono (c, y, p);
+        CHECK (y == x, "off: bit-exact passthrough");
+    }
+    // static curves: compress ~3:1 soft knee, limit much firmer
+    auto slopeAt = [&] (bool limit, double hiDb)
+    {
+        double out[2];
+        for (int k = 0; k < 2; ++k)
+        {
+            C c; c.prepare (fs);
+            C::Params p; p.active = true; p.peakReduction = 0.6; p.limit = limit;
+            auto y = tone (fs, 4.0, 220.0, std::pow (10.0, (hiDb - 5.0 * (1 - k)) / 20.0));
+            runMono (c, y, p);
+            out[k] = dbRms (y, y.size() - 48000, y.size());
+        }
+        return 5.0 / (out[1] - out[0]);
+    };
+    const double cLow = slopeAt (false, -28.0), cHigh = slopeAt (false, -3.0), lHigh = slopeAt (true, -3.0);
+    CHECK (cLow < 1.25 && cHigh > 2.4 && cHigh < 3.4, "COMPRESS: soft knee (%.2f:1 low) rising to %.2f:1", cLow, cHigh);
+    CHECK (lHigh > 7.0, "LIMIT: %.1f:1 at high level", lHigh);
+
+    // attack ~10 ms, two-stage program-dependent release
+    auto burst = [&] (double seconds, double& attackMs, double& rel50Ms, double& rel90s)
+    {
+        C c; c.prepare (fs);
+        C::Params p; p.active = true; p.peakReduction = 0.6;
+        const size_t n = static_cast<size_t> (fs * (2.0 + seconds + 8.0));
+        std::vector<float> y (n);
+        for (size_t i = 0; i < n; ++i)
+        {
+            const double t = static_cast<double> (i) / fs;
+            const double db = (t >= 2.0 && t < 2.0 + seconds) ? -10.0 : -30.0;
+            y[i] = static_cast<float> (std::pow (10.0, db / 20.0) * std::sin (2.0 * kPi * 440.0 * t));
+        }
+        std::vector<double> gr;
+        runMono (c, y, p, &gr);
+        auto at = [&] (double t) { return gr[std::min (gr.size() - 1, static_cast<size_t> (t * 1000.0))]; };
+        const double base = at (1.99), peak = at (2.0 + seconds - 0.001), shortPeak = at (2.08);
+        attackMs = rel50Ms = rel90s = 0.0;
+        for (double t = 2.0; t < 2.08; t += 0.001) if (at (t) - base >= 0.63 * (shortPeak - base)) { attackMs = (t - 2.0) * 1000.0; break; }
+        for (double t = 2.0 + seconds; t < 2.0 + seconds + 8.0; t += 0.001)
+        {
+            const double rel = (peak - at (t)) / (peak - base);
+            if (rel50Ms == 0.0 && rel >= 0.5) rel50Ms = (t - 2.0 - seconds) * 1000.0;
+            if (rel >= 0.9) { rel90s = t - 2.0 - seconds; break; }
+        }
+    };
+    double a1, r1, f1, a2, r2, f2;
+    burst (0.1, a1, r1, f1);
+    burst (3.0, a2, r2, f2);
+    CHECK (a1 > 4.0 && a1 < 20.0, "attack %.1f ms (opto: ~10 ms)", a1);
+    CHECK (r1 > 25.0 && r1 < 120.0 && r2 > 25.0 && r2 < 120.0, "release to 50%%: %.0f / %.0f ms (opto: ~60 ms)", r1, r2);
+    CHECK (f1 < 0.5 && f2 > 1.0 && f2 < 15.0, "full release is program-dependent: %.2f s after a short peak, %.2f s after a long passage", f1, f2);
+
+    // tube stage: low distortion at nominal level, mostly 2nd harmonic; flat response
+    {
+        auto thd = [&] (double db, double& h2share)
+        {
+            C c; c.prepare (fs);
+            C::Params p; p.active = true; p.peakReduction = 0.0;
+            auto y = tone (fs, 1.0, 1000.0, std::pow (10.0, db / 20.0));
+            runMono (c, y, p);
+            auto amp = [&] (double hz)
+            {
+                double sn = 0, cs = 0;
+                for (size_t i = 24000; i < 48000; ++i) { sn += y[i] * std::sin (2.0 * kPi * hz * i / fs); cs += y[i] * std::cos (2.0 * kPi * hz * i / fs); }
+                return 2.0 * std::sqrt (sn * sn + cs * cs) / 24000.0;
+            };
+            const double f = amp (1000.0), h2 = amp (2000.0), h3 = amp (3000.0);
+            h2share = h2 / std::sqrt (h2 * h2 + h3 * h3);
+            return 100.0 * std::sqrt (h2 * h2 + h3 * h3) / f;
+        };
+        double s18, s12;
+        const double t18 = thd (-18.0, s18), t12 = thd (-12.0, s12);
+        CHECK (t18 < 0.2 && t12 < 0.35 && s18 > 0.9, "tube stage THD %.3f%% (-18 dBFS), %.3f%% (-12 dBFS), mostly 2nd harmonic", t18, t12);
+        double worst = 0.0;
+        for (double hz : { 20.0, 100.0, 1000.0, 10000.0, 20000.0 })
+        {
+            C c; c.prepare (fs);
+            C::Params p; p.active = true; p.peakReduction = 0.0;
+            const auto x = tone (fs, 1.0, hz, 0.06);
+            auto y = x;
+            runMono (c, y, p);
+            worst = std::max (worst, std::fabs (dbRms (y, 24000, 48000) - dbRms (x, 24000, 48000)));
+        }
+        CHECK (worst < 0.05, "flat 20 Hz - 20 kHz (worst %.3f dB)", worst);
+    }
+    // gain knob, mix, stereo link, on/off and knob moves click-free, stable
+    {
+        C c; c.prepare (fs);
+        C::Params p; p.active = true; p.peakReduction = 0.0; p.gainDb = 6.0;
+        auto y = tone (fs, 1.0, 1000.0, 0.05);
+        const auto x = y;
+        runMono (c, y, p);
+        const double g = dbRms (y, 24000, 48000) - dbRms (x, 24000, 48000);
+        CHECK (std::fabs (g - 6.0) < 0.1, "GAIN +6 dB measures %+.2f dB", g);
+
+        C s; s.prepare (fs);
+        std::vector<float> l = tone (fs, 2.0, 220.0, 0.5), r (l.size(), 0.0f);
+        C::Params q; q.active = true; q.peakReduction = 0.7;
+        for (size_t i = 0; i < l.size(); i += 256) s.process (l.data() + i, r.data() + i, static_cast<int> (std::min<size_t> (256, l.size() - i)), q);
+        CHECK (rmsOf (r, 48000, 96000) < 1e-3, "stereo-linked: a loud left side does not leak into a silent right (%.2g)", rmsOf (r, 48000, 96000));
+
+        C m; m.prepare (fs);
+        auto t = tone (fs, 6.0, 196.0, 0.3);
+        std::vector<float> l2, r2;
+        runStereo (t, l2, r2, 256, [&] (float* a, float* b, int n, int blk)
+        {
+            C::Params z;
+            z.active = (blk / 150) % 2 == 0;
+            z.peakReduction = (blk / 40) % 2 ? 0.2 : 0.9;
+            z.limit = (blk / 70) % 2 == 1;
+            z.gainDb = (blk / 33) % 2 ? 0.0 : 9.0;
+            z.mix = (blk / 45) % 2 ? 1.0 : 0.4;
+            z.emphasis = (blk / 27) % 2 ? 0.0 : 1.0;
+            m.process (a, b, n, z);
+        });
+        bool finite = true; for (float v : l2) finite &= std::isfinite (v);
+        CHECK (finite && maxStep (l2) < 0.12, "on/off, mode and knob moves are click-free (max step %.4f)", maxStep (l2));
+    }
+}
+
 static void testPostFx()
 {
     testGraphicEq();
     testDelay();
     testReverb();
+    testOptoLeveler();
     testTuner();
 }

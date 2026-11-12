@@ -53,7 +53,7 @@ class Pedalboard : public juce::Component
 {
 public:
     static constexpr int kWidth = 1240, kHeight = 186;          // horizontal strip (pedals only)
-    static constexpr int kColumnWidth = 236, kColumnHeight = 410; // vertical column beside the rack
+    static constexpr int kColumnWidth = 236, kColumnHeight = 534; // vertical column beside the rack (rack height x 1004 / 1240)
     explicit Pedalboard (VFXAampsProcessor&);
     void setVertical (bool v);
     bool isVertical() const noexcept { return vertical; }

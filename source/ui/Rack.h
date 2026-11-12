@@ -103,17 +103,39 @@ private:
     juce::String shownText;
 };
 
+/** Tube opto leveling amp: VU meter (gain reduction / output), GAIN, PEAK REDUCTION, COMPRESS / LIMIT,
+    HF emphasis, mix and the chain position (pre amp / post cab / end). */
+class CompUnit : public RackUnit
+{
+public:
+    explicit CompUnit (VFXAampsProcessor&);
+    void resized() override;
+    void tick() override;
+
+private:
+    void paintPanel (juce::Graphics&) override;
+    juce::Rectangle<float> meterArea() const { return { 268.0f, 12.0f, 236.0f, static_cast<float> (getHeight()) - 24.0f }; }
+    Knob gain, peak, emphasis, mix;
+    std::array<juce::TextButton, 2> modeButtons;
+    std::array<juce::TextButton, 3> positionButtons;
+    juce::TextButton meterButton { "OUTPUT" };
+    std::unique_ptr<ButtonAttachment> meterAtt;
+    float needle = 0.0f;     // VU, -20 .. +3
+    bool shownOutput = false;
+};
+
 /** The rack: case with rails, holding the three units. Laid out at a fixed base size and scaled by the editor. */
 class Rack : public juce::Component
 {
 public:
-    static constexpr int kWidth = 1240, kHeight = 506;
+    static constexpr int kWidth = 1240, kHeight = 660;
     explicit Rack (VFXAampsProcessor&);
     void tick();
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
+    CompUnit comp;
     EqUnit eq;
     DelayUnit delay;
     ReverbUnit reverb;

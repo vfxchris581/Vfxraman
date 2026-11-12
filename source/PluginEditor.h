@@ -42,7 +42,7 @@ private:
     std::unique_ptr<ButtonAttachment> gateOnAtt, limiterAtt, irOnAtt, normalizeAtt;
     juce::ComboBox osBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> osAtt;
-    juce::TextButton presetButton, saveButton { "SAVE" };
+    juce::TextButton presetButton, saveButton { "SAVE" }, resetButton { "RESET" };
 public:
     /** Shows / hides the effects rack under the amp (handled by the editor). */
     juce::TextButton rackButton { "RACK" }, pedalsButton { "PEDALS" };

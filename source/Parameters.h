@@ -63,6 +63,15 @@ inline const juce::String rvbHighRT   = "reverbHighRT";
 inline const juce::String rvbEarly    = "reverbEarly";
 inline const juce::String rvbLowCut   = "reverbLowCut";
 inline const juce::String rvbWidth    = "reverbWidth";
+// opto leveling amp (parameter version 6)
+inline const juce::String compOn       = "compOn";
+inline const juce::String compPeakRed  = "compPeakReduction";
+inline const juce::String compGain     = "compGain";
+inline const juce::String compLimit    = "compLimit";
+inline const juce::String compEmphasis = "compEmphasis";
+inline const juce::String compMix      = "compMix";
+inline const juce::String compPosition = "compPosition";   // 0 pre amp, 1 post cab, 2 end
+inline const juce::String compMeterOut = "compMeterOutput";
 
 /** Delay note divisions (for tempo sync) and their length in beats. */
 inline const juce::StringArray& delayDivisionNames()
@@ -187,6 +196,17 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterFloat> (pid5 (rvbEarly), "Reverb Early", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.5f, pctAttr));
     layout.add (std::make_unique<AudioParameterFloat> (pid5 (rvbLowCut), "Reverb Low Cut", NormalisableRange<float> (20.0f, 1000.0f, 1.0f, 0.4f), 80.0f, hzAttr));
     layout.add (std::make_unique<AudioParameterFloat> (pid5 (rvbWidth), "Reverb Width", NormalisableRange<float> (0.0f, 1.5f, 0.001f), 1.0f, pctAttr));
+
+    auto pid6 = [] (const String& id) { return ParameterID { id, 6 }; };
+    layout.add (std::make_unique<AudioParameterBool> (pid6 (compOn), "Compressor", false));
+    layout.add (std::make_unique<AudioParameterFloat> (pid6 (compPeakRed), "Comp Peak Reduction", NormalisableRange<float> (0.0f, 100.0f, 0.1f), 40.0f,
+        AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (roundToInt (v)); })));
+    layout.add (std::make_unique<AudioParameterFloat> (pid6 (compGain), "Comp Gain", NormalisableRange<float> (-12.0f, 24.0f, 0.01f), 0.0f, dbAttr));
+    layout.add (std::make_unique<AudioParameterBool> (pid6 (compLimit), "Comp Limit", false));
+    layout.add (std::make_unique<AudioParameterFloat> (pid6 (compEmphasis), "Comp HF Emphasis", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.0f, pctAttr));
+    layout.add (std::make_unique<AudioParameterFloat> (pid6 (compMix), "Comp Mix", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 1.0f, pctAttr));
+    layout.add (std::make_unique<AudioParameterChoice> (pid6 (compPosition), "Comp Position", StringArray { "Pre Amp", "Post Cab", "End" }, 1));
+    layout.add (std::make_unique<AudioParameterBool> (pid6 (compMeterOut), "Comp Meter Output", false));
 
     for (int k = 0; k < 2; ++k)
     {

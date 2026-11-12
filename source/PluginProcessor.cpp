@@ -50,6 +50,10 @@ VFXAampsProcessor::VFXAampsProcessor()
     pRvbMod = param (apvts, P::rvbMod);       pRvbLowRT = param (apvts, P::rvbLowRT);
     pRvbHighRT = param (apvts, P::rvbHighRT); pRvbEarly = param (apvts, P::rvbEarly);
     pRvbLowCut = param (apvts, P::rvbLowCut); pRvbWidth = param (apvts, P::rvbWidth);
+    pCompOn = param (apvts, P::compOn);       pCompPeak = param (apvts, P::compPeakRed);
+    pCompGain = param (apvts, P::compGain);   pCompLimit = param (apvts, P::compLimit);
+    pCompEmph = param (apvts, P::compEmphasis); pCompMix = param (apvts, P::compMix);
+    pCompPos = param (apvts, P::compPosition);
     for (int k = 0; k < vfxa::kNumSlots; ++k) pSlotTrim[static_cast<size_t> (k)] = param (apvts, P::slotTrim (k));
     for (int k = 0; k < vfxa::kNumSlots; ++k) { pSlotIr[static_cast<size_t> (k)] = param (apvts, P::slotIr (k)); pendingSlotIr[static_cast<size_t> (k)].store (0); }
     for (int k = 0; k < kNumPedals; ++k)
@@ -132,6 +136,10 @@ void VFXAampsProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
         pd.hold = 0;
     }
     graphicEq.prepare (sampleRate);
+    comp.prepare (sampleRate);
+    compMove.prepare (sampleRate, 0.012);
+    compMove.snap (1.0);
+    compPosNow.store (static_cast<int> (pCompPos->load()));
     delay.prepare (sampleRate);
     reverb.prepare (sampleRate);
     tuner.prepare (sampleRate);
@@ -173,6 +181,33 @@ int VFXAampsProcessor::computeLatency() const noexcept
         l += juce::roundToInt (osTone[static_cast<size_t> (activeOs)]->getLatencyInSamples())
            + juce::roundToInt (osLim[static_cast<size_t> (activeOs)]->getLatencyInSamples());
     return l;
+}
+
+vfxa::OptoLeveler::Params VFXAampsProcessor::compParamsFor (int position) noexcept
+{
+    vfxa::OptoLeveler::Params cp;
+    cp.active = pCompOn->load (std::memory_order_relaxed) > 0.5f && position == compPosNow.load (std::memory_order_relaxed)
+                && compMove.getTarget() > 0.5;
+    cp.peakReduction = pCompPeak->load (std::memory_order_relaxed) / 100.0;
+    cp.gainDb = pCompGain->load (std::memory_order_relaxed);
+    cp.limit = pCompLimit->load (std::memory_order_relaxed) > 0.5f;
+    cp.emphasis = pCompEmph->load (std::memory_order_relaxed);
+    cp.mix = pCompMix->load (std::memory_order_relaxed);
+    return cp;
+}
+
+void VFXAampsProcessor::resetAmpHead()
+{
+    namespace P = vfxa::params;
+    for (int k = 0; k < vfxa::kNumSlots; ++k)
+    {
+        clearAsset (k);
+        for (const auto& id : { P::slotTrim (k), P::slotIr (k) })
+            if (auto* prm = apvts.getParameter (id)) prm->setValueNotifyingHost (prm->getDefaultValue());
+        pendingSlotIr[static_cast<size_t> (k)].store (0);
+    }
+    for (const auto* id : { &P::bass, &P::mid, &P::treble, &P::presence })
+        if (auto* prm = apvts.getParameter (*id)) prm->setValueNotifyingHost (prm->convertTo0to1 (5.0f));
 }
 
 void VFXAampsProcessor::applyPendingSlotIrSwitches()
@@ -276,6 +311,16 @@ void VFXAampsProcessor::processChunk (int n) noexcept
         x[i] = static_cast<float> (v);
     }
 
+    // --- compressor position: fade out where it is, move, fade back in ------------------------
+    {
+        const int want = static_cast<int> (pCompPos->load (std::memory_order_relaxed));
+        if (want != compPosNow.load (std::memory_order_relaxed))
+        {
+            compMove.setTarget (0.0); // makes the compressor fade out (to dry) where it is
+            if (! comp.isActive()) { compPosNow.store (want, std::memory_order_relaxed); compMove.setTarget (1.0); }
+        }
+        compMove.skip (n);
+    }
     // --- NAM pedals 1 and 2 (in front of the amp) ------------------------------------------
     pedalParams.normalize = false; // keep the capture's own gain: how hard a boost hits the amp matters
     for (int k = 0; k < kNumPedals; ++k)
@@ -336,6 +381,9 @@ void VFXAampsProcessor::processChunk (int n) noexcept
         }
         pedalMeter[static_cast<size_t> (k)].store (static_cast<float> (pd.mix.getCurrent()), std::memory_order_relaxed);
     }
+
+    // --- compressor, PRE AMP position (mono) ------------------------------------------------
+    if (compPosNow.load (std::memory_order_relaxed) == 0) comp.process (x, nullptr, n, compParamsFor (0));
 
     // --- 10-slot NAM morph ----------------------------------------------------------------
     engineParams.morph = pMorph->load (std::memory_order_relaxed);
@@ -408,6 +456,9 @@ void VFXAampsProcessor::processChunk (int n) noexcept
     }
     irs.process (x, l, r, n, pIrOn->load() > 0.5f, pIrBlend->load(), ip[0], ip[1], slotIrAmount);
 
+    // --- compressor, POST CAB position ------------------------------------------------------
+    if (compPosNow.load (std::memory_order_relaxed) == 1) comp.process (l, r, n, compParamsFor (1));
+
     // --- effects rack: graphic EQ -> delay -> reverb ----------------------------------------
     {
         std::array<double, vfxa::GraphicEq::kBands> bands {};
@@ -451,6 +502,9 @@ void VFXAampsProcessor::processChunk (int n) noexcept
         rp.mix = ld (pRvbMix);
         reverb.process (l, r, n, rp);
     }
+
+    // --- compressor, END position ---------------------------------------------------------------
+    if (compPosNow.load (std::memory_order_relaxed) == 2) comp.process (l, r, n, compParamsFor (2));
 
     // --- output level + limiter (optionally oversampled) ----------------------------------
     outGain.setDb (pOut->load (std::memory_order_relaxed));

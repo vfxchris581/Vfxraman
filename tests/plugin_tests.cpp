@@ -443,6 +443,8 @@ static void testEditorSnapshot (const File& outDir)
     setParam (p, P::rvbDecay, 3.4f);
     setParam (p, P::rvbSize, 0.7f);
     setParam (p, P::slotIr (1), 0.0f); // show one slot with its IR switched off
+    setParam (p, P::compOn, 1.0f);
+    setParam (p, P::compPeakRed, 55.0f);
     p.loadAsset (VFXAampsProcessor::pedalAsset (0), modelFile ("lstm.nam"));
     p.waitForLoads (20000);
     run (p, sine (48000, 0.3, 110.0 * std::pow (2.0, 7.0 / 1200.0)), 256); // slot glow / meters, and A2 +7 cents on the tuner
@@ -706,6 +708,64 @@ static void testPedals()
     CHECK (jump < 0.06, "loading a pedal while playing at 44.1 kHz is click-free (max step %.4f)", jump);
 }
 
+//==============================================================================
+static void testResetAndCompressor()
+{
+    std::printf ("Amp head RESET + movable compressor\n");
+    namespace P = vfxa::params;
+    const double fs = 48000;
+    {
+        VFXAampsProcessor p;
+        p.prepareToPlay (fs, 480);
+        for (int k : { 0, 3, 9 }) p.loadAsset (k, modelFile ("lstm.nam"));
+        p.loadAsset (VFXAampsProcessor::pedalAsset (0), modelFile ("lstm.nam"));
+        p.waitForLoads (20000);
+        setParam (p, P::bass, 8.0f); setParam (p, P::mid, 2.0f); setParam (p, P::treble, 9.5f); setParam (p, P::presence, 0.5f);
+        setParam (p, P::slotTrim (3), -6.0f);
+        setParam (p, P::slotIr (9), 0.0f);
+        p.resetAmpHead();
+        p.waitForLoads (20000);
+        bool anySlot = false;
+        for (int k = 0; k < vfxa::kNumSlots; ++k) anySlot |= p.getAssetStatus (k).loaded || p.getAssetStatus (k).path.isNotEmpty();
+        CHECK (! anySlot, "RESET removes the captures from all 10 slots");
+        CHECK (paramValue (p, P::bass) == 5.0f && paramValue (p, P::mid) == 5.0f && paramValue (p, P::treble) == 5.0f && paramValue (p, P::presence) == 5.0f,
+               "RESET sets BASS / MIDDLE / TREBLE / PRESENCE to 5.0 (%.2f %.2f %.2f %.2f)",
+               paramValue (p, P::bass), paramValue (p, P::mid), paramValue (p, P::treble), paramValue (p, P::presence));
+        CHECK (paramValue (p, P::slotTrim (3)) == 0.0f && paramValue (p, P::slotIr (9)) > 0.5f, "RESET returns slot levels and IR switches to default");
+        CHECK (p.getAssetStatus (VFXAampsProcessor::pedalAsset (0)).loaded, "RESET leaves the pedals alone");
+    }
+    // compressor at each position levels the signal; moving it while playing is click-free
+    for (int pos = 0; pos < 3; ++pos)
+    {
+        VFXAampsProcessor p;
+        makeNeutral (p);
+        p.prepareToPlay (fs, 480);
+        setParam (p, P::compPosition, static_cast<float> (pos));
+        run (p, std::vector<float> (4800, 0.0f), 480);
+        const auto x = sine (fs, 2.0, 220.0, 0.5);
+        const auto dry = run (p, x, 480);
+        setParam (p, P::compOn, 1.0f);
+        setParam (p, P::compPeakRed, 70.0f);
+        const auto wet = run (p, x, 480);
+        const double drop = 20.0 * std::log10 (rms (wet.l, 48000, 96000) / rms (dry.l, 48000, 96000));
+        CHECK (p.getCompActivePosition() == pos && drop < -3.0 && p.getCompGainReductionDb() > 3.0f,
+               "compressor %s: levels a loud signal by %.1f dB (meter %.1f dB GR)", pos == 0 ? "PRE AMP" : pos == 1 ? "POST CAB" : "END",
+               drop, p.getCompGainReductionDb());
+    }
+    {
+        VFXAampsProcessor p;
+        makeNeutral (p);
+        p.prepareToPlay (fs, 480);
+        setParam (p, P::compOn, 1.0f);
+        setParam (p, P::compPeakRed, 60.0f);
+        const auto x = sine (fs, 4.0, 147.0, 0.3);
+        const auto o = run (p, x, 128, [&] (int b, int) { setParam (p, P::compPosition, static_cast<float> ((b / 75) % 3)); });
+        double step = 0;
+        for (size_t i = 1; i < o.l.size(); ++i) step = std::max (step, (double) std::fabs (o.l[i] - o.l[i - 1]));
+        CHECK (step < 0.04, "moving the compressor while playing is click-free (max step %.4f)", step);
+    }
+}
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -718,6 +778,7 @@ int main (int argc, char** argv)
     testEffectsRack();
     testSlotIrSwitches();
     testPedals();
+    testResetAndCompressor();
     testEditorSnapshot (shots);
     std::printf ("\n%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

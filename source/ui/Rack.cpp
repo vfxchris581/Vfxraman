@@ -565,8 +565,137 @@ void ReverbUnit::paintPanel (Graphics& g)
 }
 
 //==============================================================================
-Rack::Rack (VFXAampsProcessor& p) : eq (p), delay (p), reverb (p)
+CompUnit::CompUnit (VFXAampsProcessor& p) : RackUnit (p, "VX-O2", "TUBE OPTO LEVELER", Colour (0xff3b342c), Colour (0xffffb347))
 {
+    powerAtt = std::make_unique<ButtonAttachment> (proc.apvts, P::compOn, power);
+    power.setTooltip ("Compressor on/off");
+    setupKnob (gain, P::compGain, "GAIN");
+    setupKnob (peak, P::compPeakRed, "PEAK REDUCTION");
+    setupKnob (emphasis, P::compEmphasis, "HF EMPHASIS");
+    setupKnob (mix, P::compMix, "MIX");
+    peak.slider.setTooltip ("Peak reduction: how hard the optical cell is driven (how much it levels)");
+    gain.slider.setTooltip ("Output gain after the leveler (make-up)");
+    emphasis.slider.setTooltip ("HF emphasis: makes the leveler react more to highs");
+    mix.slider.setTooltip ("Mix: blend in the uncompressed signal (parallel compression)");
+    setupChoiceButtons (modeButtons.data(), 2, P::compLimit, { "COMPRESS", "LIMIT" });
+    modeButtons[0].setTooltip ("Compress: gentle ~3:1 leveling with a very soft knee");
+    modeButtons[1].setTooltip ("Limit: firmer, ~10:1 at high levels");
+    setupChoiceButtons (positionButtons.data(), 3, P::compPosition, { "PRE AMP", "POST CAB", "END" });
+    positionButtons[0].setTooltip ("Before the NAM amp (after the pedals): evens out your playing into the amp");
+    positionButtons[1].setTooltip ("After the amp and cab IRs, before the EQ, delay and reverb");
+    positionButtons[2].setTooltip ("At the very end, after the reverb: levels the whole sound");
+    setupButton (meterButton, meterAtt, P::compMeterOut);
+    meterButton.setTooltip ("VU meter shows the output level (off: gain reduction)");
+}
+
+void CompUnit::resized()
+{
+    layoutPowerButton();
+    modeButtons[0].setBounds (520, 28, 96, 25);
+    modeButtons[1].setBounds (520, 58, 96, 25);
+    meterButton.setBounds (520, 100, 96, 24);
+    gain.slider.setBounds (Rectangle<int> (80, 80).withCentre ({ 684, 60 }));
+    peak.slider.setBounds (Rectangle<int> (80, 80).withCentre ({ 812, 60 }));
+    emphasis.slider.setBounds (Rectangle<int> (52, 52).withCentre ({ 920, 56 }));
+    mix.slider.setBounds (Rectangle<int> (52, 52).withCentre ({ 1004, 56 }));
+    for (int i = 0; i < 3; ++i) positionButtons[static_cast<size_t> (i)].setBounds (1062, 34 + i * 30, 98, 25);
+}
+
+void CompUnit::tick()
+{
+    updateChoiceButtons (modeButtons.data(), 2, P::compLimit);
+    updateChoiceButtons (positionButtons.data(), 3, P::compPosition);
+    const bool outMode = meterButton.getToggleState();
+    float target;
+    if (! isOn()) target = outMode ? -20.0f : 0.0f;
+    else if (outMode) target = proc.getCompOutputDb() + 18.0f;      // 0 VU = -18 dBFS
+    else target = -proc.getCompGainReductionDb();                    // gain reduction reads down from 0 VU
+    target = jlimit (-20.0f, 3.0f, target);
+    const float next = needle + 0.32f * (target - needle);            // ~300 ms VU ballistics at 30 Hz
+    if (std::abs (next - needle) > 0.02f || outMode != shownOutput)
+    {
+        needle = next;
+        shownOutput = outMode;
+        repaint (meterArea().toNearestInt().expanded (2));
+    }
+}
+
+void CompUnit::paintPanel (Graphics& g)
+{
+    // VU meter: bezel, warm-lit dial, scale, needle
+    const auto box = meterArea();
+    g.setColour (Colour (0xff0b0a09));
+    g.fillRoundedRectangle (box, 6.0f);
+    g.setColour (Colour (0x40ffffff));
+    g.drawLine (box.getX() + 6.0f, box.getBottom() - 0.5f, box.getRight() - 6.0f, box.getBottom() - 0.5f, 0.8f);
+    const auto dial = box.reduced (6.0f);
+    const bool on = isOn();
+    g.setGradientFill (ColourGradient (on ? Colour (0xfffff1cf) : Colour (0xffcfc6b2), dial.getCentre().translated (0.0f, -dial.getHeight() * 0.2f),
+                                       on ? Colour (0xffe0b76a) : Colour (0xff9c927e), dial.getBottomLeft(), true));
+    g.fillRoundedRectangle (dial, 4.0f);
+
+    const Point<float> pivot { dial.getCentreX(), dial.getBottom() + dial.getHeight() * 0.72f };
+    const float radius = dial.getHeight() * 1.48f;
+    auto angleFor = [] (float vu)
+    {
+        // VU scale: -20 .. +3, compressed at the low end like a real VU (roughly linear in voltage)
+        const float v = std::pow (10.0f, vu / 20.0f), lo = std::pow (10.0f, -20.0f / 20.0f), hi = std::pow (10.0f, 3.0f / 20.0f);
+        return -0.62f + 1.24f * (v - lo) / (hi - lo);
+    };
+    auto pointAt = [&] (float angle, float r) { return Point<float> (pivot.x + r * std::sin (angle), pivot.y - r * std::cos (angle)); };
+    // red zone
+    Path red;
+    red.addCentredArc (pivot.x, pivot.y, radius - 6.0f, radius - 6.0f, 0.0f, angleFor (0.0f), angleFor (3.0f), true);
+    g.setColour (Colour (0xffc2281b));
+    g.strokePath (red, PathStrokeType (5.0f));
+    Path arc;
+    arc.addCentredArc (pivot.x, pivot.y, radius - 9.0f, radius - 9.0f, 0.0f, angleFor (-20.0f), angleFor (3.0f), true);
+    g.setColour (Colour (0xff221d16));
+    g.strokePath (arc, PathStrokeType (1.0f));
+    g.setFont (Font (FontOptions (9.0f, Font::bold)));
+    for (float vu : { -20.0f, -10.0f, -7.0f, -5.0f, -3.0f, -2.0f, -1.0f, 0.0f, 1.0f, 2.0f, 3.0f })
+    {
+        const float a = angleFor (vu);
+        const bool major = vu == -20.0f || vu == -10.0f || vu == -5.0f || vu == -3.0f || vu == 0.0f || vu == 3.0f;
+        g.setColour (vu > 0.0f ? Colour (0xffc2281b) : Colour (0xff221d16));
+        g.drawLine (Line<float> (pointAt (a, radius - 9.0f), pointAt (a, radius - (major ? 17.0f : 13.0f))), major ? 1.3f : 0.9f);
+        if (major)
+        {
+            const auto t = pointAt (a, radius - 26.0f);
+            g.drawText (vu > 0.0f ? "+" + String (roundToInt (vu)) : String (roundToInt (vu)), Rectangle<float> (26.0f, 11.0f).withCentre (t), Justification::centred);
+        }
+    }
+    g.setColour (Colour (0xff221d16));
+    g.setFont (Font (FontOptions (13.0f, Font::bold)).withExtraKerningFactor (0.1f));
+    g.drawText ("VU", Rectangle<float> (40.0f, 16.0f).withCentre ({ dial.getCentreX(), dial.getBottom() - 26.0f }), Justification::centred);
+    g.setFont (AmpLookAndFeel::labelFont (8.0f));
+    g.setColour (Colour (0xa0221d16));
+    g.drawText (shownOutput ? "OUTPUT" : "GAIN REDUCTION", Rectangle<float> (dial.getX(), dial.getBottom() - 18.0f, dial.getWidth(), 12.0f), Justification::centred);
+    // needle (the pivot sits below the window, so clip it to the glass)
+    {
+        Graphics::ScopedSaveState clip (g);
+        g.reduceClipRegion (dial.toNearestInt());
+        const float a = angleFor (needle);
+        g.setColour (Colour (0x40000000));
+        g.drawLine (Line<float> (pointAt (a, 20.0f).translated (1.5f, 1.5f), pointAt (a, radius - 4.0f).translated (1.5f, 1.5f)), 1.6f);
+        g.setColour (Colour (0xff141210));
+        g.drawLine (Line<float> (pointAt (a, 20.0f), pointAt (a, radius - 4.0f)), 1.4f);
+    }
+    // glass sheen
+    g.setGradientFill (ColourGradient (Colour (0x30ffffff), dial.getTopLeft(), Colour (0x00ffffff), dial.getTopLeft().translated (0.0f, dial.getHeight() * 0.5f), false));
+    g.fillRoundedRectangle (dial, 4.0f);
+
+    drawCaptions (g, { &gain, &peak, &emphasis, &mix });
+    g.setFont (AmpLookAndFeel::labelFont (9.0f));
+    g.setColour (Colour (0xffb8ad9c));
+    g.drawText ("POSITION", Rectangle<float> (1062.0f, 14.0f, 98.0f, 14.0f), Justification::centred);
+    g.drawText ("MODE", Rectangle<float> (520.0f, 12.0f, 96.0f, 14.0f), Justification::centred);
+}
+
+//==============================================================================
+Rack::Rack (VFXAampsProcessor& p) : comp (p), eq (p), delay (p), reverb (p)
+{
+    addAndMakeVisible (comp);
     addAndMakeVisible (eq);
     addAndMakeVisible (delay);
     addAndMakeVisible (reverb);
@@ -575,13 +704,15 @@ Rack::Rack (VFXAampsProcessor& p) : eq (p), delay (p), reverb (p)
 
 void Rack::resized()
 {
-    eq.setBounds (14, 10, kWidth - 28, 150);
-    delay.setBounds (14, 164, kWidth - 28, 164);
-    reverb.setBounds (14, 332, kWidth - 28, 164);
+    comp.setBounds (14, 10, kWidth - 28, 150);
+    eq.setBounds (14, 164, kWidth - 28, 150);
+    delay.setBounds (14, 318, kWidth - 28, 164);
+    reverb.setBounds (14, 486, kWidth - 28, 164);
 }
 
 void Rack::tick()
 {
+    comp.tick();
     eq.tick();
     delay.tick();
     reverb.tick();
@@ -605,7 +736,7 @@ void Rack::paint (Graphics& g)
     }
     // shadows the units cast on the case
     g.setColour (Colour (0x80000000));
-    for (auto* u : { static_cast<Component*> (&eq), static_cast<Component*> (&delay), static_cast<Component*> (&reverb) })
+    for (auto* u : { static_cast<Component*> (&comp), static_cast<Component*> (&eq), static_cast<Component*> (&delay), static_cast<Component*> (&reverb) })
         g.fillRect (u->getBounds().toFloat().translated (0.0f, 3.0f).reduced (6.0f, 0.0f));
 }
 
