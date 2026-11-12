@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VFXAamps Key Generator</title>
+<!--
+  VFXAamps license key generator. Works offline: open this file in any browser.
+  It holds no secrets. Each time you use it, load your private key file (vfxaamps-private.key),
+  which never leaves your computer. Keep that file safe and backed up: anyone who has it can make keys,
+  and without it you cannot make new ones for this version of the plug-in.
+-->
+<style>
+  :root {
+    --bg: #0b1430; --panel: #13214a; --edge: #26386b; --text: #eef1f6; --muted: #9aa7c4;
+    --cyan: #23ded9; --blue: #5c70f0; --ok: #3ddc97; --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(1200px 600px at 50% -10%, #1a2a5a, var(--bg)); color: var(--text);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; min-height: 100vh; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: .5px;
+       background: linear-gradient(90deg, var(--cyan), var(--blue)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  section { background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin: 0 0 12px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], textarea { width: 100%; background: #0a1230; color: var(--text); border: 1px solid var(--edge);
+       border-radius: 8px; padding: 10px 12px; font: inherit; }
+  textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; resize: vertical; min-height: 92px; word-break: break-all; }
+  button { background: linear-gradient(90deg, #1fb9c9, var(--blue)); color: #fff; border: 0; border-radius: 8px;
+       padding: 10px 16px; font: 600 14px/1 inherit; cursor: pointer; margin-top: 12px; }
+  button.secondary { background: #24365f; }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .status { margin-top: 10px; font-size: 14px; min-height: 21px; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .file { display: inline-block; }
+  .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>VFXAamps Key Generator</h1>
+  <p class="sub">Make license keys for your customers. Everything happens on this computer; nothing is sent anywhere.</p>
+
+  <section>
+    <h2>1 · Your private key</h2>
+    <div class="row">
+      <input class="file" type="file" id="keyfile" accept=".key,.txt">
+      <button class="secondary" id="pasteToggle" type="button">Paste instead</button>
+    </div>
+    <textarea id="keytext" placeholder="…or paste the contents of vfxaamps-private.key" hidden></textarea>
+    <div class="status" id="keystatus">No private key loaded.</div>
+  </section>
+
+  <section>
+    <h2>2 · Make a key</h2>
+    <label for="who">Customer name or email</label>
+    <input type="text" id="who" placeholder="e.g. Jane Smith <jane@example.com>" autocomplete="off">
+    <div class="row"><button id="make" disabled>Generate key</button></div>
+    <label for="out">License key (send this to the customer)</label>
+    <textarea id="out" readonly placeholder="The key appears here"></textarea>
+    <div class="row"><button class="secondary" id="copy" disabled>Copy key</button></div>
+    <div class="status" id="makestatus"></div>
+    <p class="hint">In VFXAamps the customer clicks the trial button in the header (or <em>Enter license key</em> when the trial has ended) and pastes the key.</p>
+  </section>
+
+  <section>
+    <h2>Check a key</h2>
+    <textarea id="check" placeholder="Paste any VFXAamps key to see who it was made for"></textarea>
+    <div class="status" id="checkstatus"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+// Public key built into the plug-in (source/License.cpp). Used to confirm the private key matches it.
+const PUBLIC_E = 0x10001n;
+const PUBLIC_N = BigInt("0xbe21b77efddf519ca92c662a1cb3c04617e9f7a5df81f095723d7a261e10d63103e83773ad1556ba628db03acdd11c7192f00dbfd902b76073af5c9388195a457d7ff169bd0f092492d876169ce0866934fa49e0121d94c94dbdbf03db7809860cc0508604f6a6fbe7bfe4262a8c852127e9289a2fda99367a3061975e3c9ad3201170ca5720400d6fdede21db16da7d3a374b48b5717fbe0a8c2875183037c030448385b5a831b1b0b06d45fb17080b7341e2525acf905fb5240f748b6962248ca7e4f911fb7d15f96ddf10628e7803d1c69965cc697a0ecc79c0a7941e50b7f8a40ea36e87be74f6c498212e86941ad44892e89469d729950addf7c2a20529");
+const PRODUCT = "VFXAamps";
+
+// ---- SHA-256 (plain JS so it also works when this page is opened from disk) ----
+function sha256(bytes) {
+  const K = new Uint32Array([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+  const H = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+  const len = bytes.length, total = ((len + 9 + 63) >> 6) << 6;
+  const m = new Uint8Array(total); m.set(bytes); m[len] = 0x80;
+  const bits = len * 8; const dv = new DataView(m.buffer);
+  dv.setUint32(total - 8, Math.floor(bits / 0x100000000)); dv.setUint32(total - 4, bits >>> 0);
+  const W = new Uint32Array(64), rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let o = 0; o < total; o += 64) {
+    for (let i = 0; i < 16; i++) W[i] = dv.getUint32(o + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(W[i-15], 7) ^ rotr(W[i-15], 18) ^ (W[i-15] >>> 3);
+      const s1 = rotr(W[i-2], 17) ^ rotr(W[i-2], 19) ^ (W[i-2] >>> 10);
+      W[i] = (W[i-16] + s0 + W[i-7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i]) >>> 0;
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    H[0] += a; H[1] += b; H[2] += c; H[3] += d; H[4] += e; H[5] += f; H[6] += g; H[7] += h;
+  }
+  return Array.from(H, x => x.toString(16).padStart(8, "0")).join("");
+}
+
+// ---- helpers ----
+const utf8 = s => new TextEncoder().encode(s);
+const toB64 = bytes => btoa(Array.from(bytes, b => String.fromCharCode(b)).join(""));
+const fromB64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+function modPow(b, e, m) { let r = 1n; b %= m; while (e > 0n) { if (e & 1n) r = r * b % m; b = b * b % m; e >>= 1n; } return r; }
+function bigToBytes(x, len) { let h = x.toString(16); h = h.padStart(len * 2, "0"); return Uint8Array.from(h.match(/../g), p => parseInt(p, 16)); }
+function bytesToBig(b) { return b.length ? BigInt("0x" + Array.from(b, x => x.toString(16).padStart(2, "0")).join("")) : 0n; }
+const today = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+
+function makeKey(licensee, d, n, date) {
+  const payload = [PRODUCT, "1", licensee, date].join("|");
+  const sig = modPow(BigInt("0x" + sha256(utf8(payload))), d, n);
+  return "VFXA1." + toB64(utf8(payload)) + "." + toB64(bigToBytes(sig, 256));
+}
+
+function checkKey(text) {
+  const key = text.replace(/\s+/g, "");
+  if (!key.startsWith("VFXA1.")) return { ok: false, why: "Not a VFXAamps key." };
+  const [p64, s64] = key.slice(6).split(".");
+  try {
+    const payload = new TextDecoder().decode(fromB64(p64));
+    const parts = payload.split("|");
+    if (parts.length !== 4 || parts[0] !== PRODUCT || parts[1] !== "1") return { ok: false, why: "Not a VFXAamps key." };
+    const sig = bytesToBig(fromB64(s64));
+    if (sig === 0n || sig >= PUBLIC_N || modPow(sig, PUBLIC_E, PUBLIC_N) !== BigInt("0x" + sha256(utf8(payload))))
+      return { ok: false, why: "Signature doesn't match — this key won't work in VFXAamps." };
+    return { ok: true, who: parts[2], date: parts[3] };
+  } catch (e) { return { ok: false, why: "The key is incomplete or damaged." }; }
+}
+
+// ---- UI ----
+let priv = null;
+const $ = id => document.getElementById(id);
+function setStatus(el, text, good) { el.textContent = text; el.className = "status " + (good === undefined ? "" : good ? "ok" : "bad"); }
+
+function loadPrivate(text) {
+  priv = null; $("make").disabled = true;
+  const m = text.trim().match(/^([0-9a-fA-F]+)\s*,\s*([0-9a-fA-F]+)$/);
+  if (!m) { setStatus($("keystatus"), "That doesn't look like a VFXAamps private key file.", false); return; }
+  const d = BigInt("0x" + m[1]), n = BigInt("0x" + m[2]);
+  if (n !== PUBLIC_N) { setStatus($("keystatus"), "This private key doesn't belong to this version of VFXAamps.", false); return; }
+  const probe = 0x5eed1234n;
+  if (modPow(modPow(probe, d, n), PUBLIC_E, n) !== probe) { setStatus($("keystatus"), "This private key is damaged.", false); return; }
+  priv = { d, n }; $("make").disabled = false;
+  setStatus($("keystatus"), "Private key loaded — ready to make keys.", true);
+}
+
+$("keyfile").addEventListener("change", e => { const f = e.target.files[0]; if (f) f.text().then(loadPrivate); });
+$("pasteToggle").addEventListener("click", () => { $("keytext").hidden = !$("keytext").hidden; });
+$("keytext").addEventListener("input", e => loadPrivate(e.target.value));
+
+$("make").addEventListener("click", () => {
+  const who = $("who").value.trim();
+  if (!who) { setStatus($("makestatus"), "Enter the customer's name or email first.", false); return; }
+  if (who.includes("|")) { setStatus($("makestatus"), "The name can't contain the | character.", false); return; }
+  const key = makeKey(who, priv.d, priv.n, today());
+  const c = checkKey(key);
+  $("out").value = key; $("copy").disabled = !c.ok;
+  setStatus($("makestatus"), c.ok ? "Key made for " + c.who + "." : "Something went wrong: " + c.why, c.ok);
+});
+$("copy").addEventListener("click", () => {
+  const t = $("out"); t.select();
+  (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).catch(() => document.execCommand("copy"))
+    .finally(() => setStatus($("makestatus"), "Copied to the clipboard.", true));
+});
+$("check").addEventListener("input", e => {
+  if (!e.target.value.trim()) { setStatus($("checkstatus"), ""); return; }
+  const c = checkKey(e.target.value);
+  setStatus($("checkstatus"), c.ok ? "Valid key for " + c.who + " (made " + c.date + ")." : c.why, c.ok);
+});
+
+// for automated tests (node)
+if (typeof module !== "undefined") module.exports = { makeKey, checkKey, sha256 };
+</script>
+</body>
+</html>

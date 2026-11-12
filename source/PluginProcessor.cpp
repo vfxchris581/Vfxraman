@@ -102,6 +102,7 @@ void VFXAampsProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     gateEnable.prepare (sampleRate, 0.010); gateEnable.snap (pGateOn->load() > 0.5f ? 1.0 : 0.0);
     limitEnable.prepare (sampleRate, 0.020); limitEnable.snap (pLimiter->load() > 0.5f ? 1.0 : 0.0);
     switchFade.prepare (sampleRate, 0.005); switchFade.snap (1.0);
+    licenseGate.prepare (sampleRate, 0.250); licenseGate.snap (license->isAudioAllowed() ? 1.0 : 0.0);
     const std::array<std::atomic<float>*, 4> knobs { pBass, pMid, pTreble, pPresence };
     for (size_t k = 0; k < 4; ++k) { toneKnobs[k].prepare (sampleRate, 0.030); toneKnobs[k].snap (knobs[k]->load()); }
     toneCountdown = 0;
@@ -135,6 +136,11 @@ int VFXAampsProcessor::computeLatency() const noexcept
 void VFXAampsProcessor::timerCallback()
 {
     engine.collectGarbage();
+    if (++licenseRefreshTicks >= 20 * 30) // every 30 s: trial countdown, or a key entered in another instance
+    {
+        licenseRefreshTicks = 0;
+        license->refresh();
+    }
     const int l = latencyWanted.load();
     if (l != getLatencySamples()) setLatencySamples (l);
 }
@@ -335,6 +341,18 @@ void VFXAampsProcessor::processChunk (int n) noexcept
         {
             applyOversamplingChoice (wantedOs);
             switchFade.setTarget (1.0);
+        }
+    }
+
+    // --- trial ended and no license: fade to silence -------------------------------------
+    licenseGate.setTarget (license->isAudioAllowed() ? 1.0 : 0.0);
+    if (licenseGate.isSmoothing() || licenseGate.getCurrent() < 1.0)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            const double g = licenseGate.next();
+            l[i] = static_cast<float> (l[i] * g);
+            r[i] = static_cast<float> (r[i] * g);
         }
     }
 

@@ -8,3 +8,6 @@ out/
 *.user
 .DS_Store
 CMakeUserPresets.json
+
+# License signing keys: never commit the private key
+*.key

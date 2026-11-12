@@ -64,6 +64,22 @@ Without Apple Developer credentials the bundles are ad-hoc signed, and macOS ask
 
 The signing and notarisation steps only run when these exist.
 
+## Licensing and trial
+
+VFXAamps runs as a full **14-day trial** from the first time it's opened. After that the sound fades to silence and a panel
+asks for a license key; a valid key unlocks it permanently on that computer (keys are tied to a name or email, not to a
+machine, so a customer can use theirs on all their computers). The header shows *Trial · N days left* until then, and
+*Licensed to …* afterwards.
+
+**Making keys:** open `tools/keygen/vfxa-keygen.html` in a browser (it works offline), load your private key file
+`vfxaamps-private.key`, type the customer's name or email and click *Generate key*. Send them the key; they paste it into
+VFXAamps. The page can also check any key and show who it was made for.
+
+Keys are RSA-2048 signatures. The plug-in holds only the public key, so it can check keys but not make them.
+**Keep `vfxaamps-private.key` private and backed up**: anyone with it can make keys, and without it you can't make keys for
+this build. It's excluded from git (`*.key`). If it is ever lost or leaked, a new key pair can be made — but the public key
+in `source/License.cpp` then changes, and keys made with the old private key stop working in new builds.
+
 ## Build it yourself
 
 Requirements: CMake 3.22+, a C++20 compiler (Xcode 15+ on macOS, Visual Studio 2022 on Windows), Git. JUCE 8 and Eigen are

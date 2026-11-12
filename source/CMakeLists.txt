@@ -37,6 +37,7 @@ set(VFXA_PLUGIN_SOURCES
     PluginProcessor.cpp
     PluginEditor.cpp
     DualIr.cpp
+    License.cpp
     ui/AmpLookAndFeel.cpp
     ui/AmpComponents.cpp)
 
@@ -57,6 +58,7 @@ target_link_libraries(VFXAamps
         vfxa_dsp
         VFXAampsAssets
         juce::juce_audio_utils
+        juce::juce_cryptography
         juce::juce_dsp
     PUBLIC
         juce::juce_recommended_config_flags
@@ -72,6 +74,6 @@ if(VFXA_BUILD_TESTS)
         VFXA_EXAMPLE_MODELS="${VFXA_NAM_DIR}/example_models"
         JucePlugin_Name="VFXAamps")
     target_link_libraries(VFXAampsPluginTests PRIVATE
-        vfxa_dsp VFXAampsAssets juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
+        vfxa_dsp VFXAampsAssets juce::juce_audio_utils juce::juce_cryptography juce::juce_dsp juce::juce_recommended_config_flags)
     add_test(NAME plugin_tests COMMAND VFXAampsPluginTests)
 endif()
