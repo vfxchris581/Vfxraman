@@ -54,6 +54,19 @@ VFXAampsProcessor::VFXAampsProcessor()
     pCompGain = param (apvts, P::compGain);   pCompLimit = param (apvts, P::compLimit);
     pCompEmph = param (apvts, P::compEmphasis); pCompMix = param (apvts, P::compMix);
     pCompPos = param (apvts, P::compPosition);
+    pEqType = param (apvts, P::eqType);
+    pEq31Link = param (apvts, P::eq31Link);
+    pEq31Range = param (apvts, P::eq31Range);
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const auto c = static_cast<size_t> (ch);
+        for (int b = 0; b < vfxa::GraphicEq31::kBands; ++b) pEq31Band[c][static_cast<size_t> (b)] = param (apvts, P::eq31Band (ch, b));
+        pEq31Input[c] = param (apvts, P::eq31Input (ch));
+        pEq31LowCut[c] = param (apvts, P::eq31LowCut (ch));
+        pEq31Limit[c] = param (apvts, P::eq31Limit (ch));
+        pEq31Thresh[c] = param (apvts, P::eq31Thresh (ch));
+        pEq31Nr[c] = param (apvts, P::eq31Nr (ch));
+    }
     for (int k = 0; k < vfxa::kNumSlots; ++k) pSlotTrim[static_cast<size_t> (k)] = param (apvts, P::slotTrim (k));
     for (int k = 0; k < vfxa::kNumSlots; ++k) { pSlotIr[static_cast<size_t> (k)] = param (apvts, P::slotIr (k)); pendingSlotIr[static_cast<size_t> (k)].store (0); }
     for (int k = 0; k < kNumPedals; ++k)
@@ -136,6 +149,11 @@ void VFXAampsProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
         pd.hold = 0;
     }
     graphicEq.prepare (sampleRate);
+    eq31.prepare (sampleRate);
+    eqTypeFade.prepare (sampleRate, 0.020);
+    eqTypeFade.snap (pEqType->load() > 0.5f ? 1.0 : 0.0);
+    eqTmpL.assign (static_cast<size_t> (maxBlock), 0.0f);
+    eqTmpR.assign (static_cast<size_t> (maxBlock), 0.0f);
     comp.prepare (sampleRate);
     compMove.prepare (sampleRate, 0.012);
     compMove.snap (1.0);
@@ -463,8 +481,45 @@ void VFXAampsProcessor::processChunk (int n) noexcept
     {
         std::array<double, vfxa::GraphicEq::kBands> bands {};
         for (size_t b = 0; b < bands.size(); ++b) bands[b] = pEqBand[b]->load (std::memory_order_relaxed);
-        graphicEq.setGains (bands, pEqOn->load (std::memory_order_relaxed) > 0.5f);
-        graphicEq.process (l, r, n);
+        const bool eqOnNow = pEqOn->load (std::memory_order_relaxed) > 0.5f;
+        graphicEq.setGains (bands, eqOnNow);
+
+        vfxa::GraphicEq31::Params ep;
+        ep.on = eqOnNow;
+        ep.link = pEq31Link->load (std::memory_order_relaxed) > 0.5f;
+        const double range = pEq31Range->load (std::memory_order_relaxed) > 0.5f ? 15.0 : 6.0;
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const auto c = static_cast<size_t> (ch);
+            auto& e = ep.ch[c];
+            for (size_t b = 0; b < e.gainDb.size(); ++b) e.gainDb[b] = range * pEq31Band[c][b]->load (std::memory_order_relaxed);
+            e.inputDb = pEq31Input[c]->load (std::memory_order_relaxed);
+            e.lowCut = pEq31LowCut[c]->load (std::memory_order_relaxed) > 0.5f;
+            e.limit = pEq31Limit[c]->load (std::memory_order_relaxed) > 0.5f;
+            e.thresholdDb = pEq31Thresh[c]->load (std::memory_order_relaxed);
+            e.nr = pEq31Nr[c]->load (std::memory_order_relaxed) > 0.5f;
+        }
+
+        // VX-10 or VX-31; while switching, both run and the output crossfades
+        eqTypeFade.setTarget (pEqType->load (std::memory_order_relaxed) > 0.5f ? 1.0 : 0.0);
+        if (! eqTypeFade.isSmoothing())
+        {
+            if (eqTypeFade.getCurrent() < 0.5) graphicEq.process (l, r, n);
+            else eq31.process (l, r, n, ep);
+        }
+        else
+        {
+            std::copy (l, l + n, eqTmpL.data());
+            std::copy (r, r + n, eqTmpR.data());
+            graphicEq.process (l, r, n);
+            eq31.process (eqTmpL.data(), eqTmpR.data(), n, ep);
+            for (int i = 0; i < n; ++i)
+            {
+                const double f = eqTypeFade.next();
+                l[i] = static_cast<float> (l[i] + f * (eqTmpL[static_cast<size_t> (i)] - l[i]));
+                r[i] = static_cast<float> (r[i] + f * (eqTmpR[static_cast<size_t> (i)] - r[i]));
+            }
+        }
 
         auto ld = [] (std::atomic<float>* v) { return static_cast<double> (v->load (std::memory_order_relaxed)); };
         vfxa::StudioDelay::Params dp;

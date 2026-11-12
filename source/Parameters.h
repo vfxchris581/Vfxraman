@@ -72,6 +72,22 @@ inline const juce::String compEmphasis = "compEmphasis";
 inline const juce::String compMix      = "compMix";
 inline const juce::String compPosition = "compPosition";   // 0 pre amp, 1 post cab, 2 end
 inline const juce::String compMeterOut = "compMeterOutput";
+// EQ type + VX-31 (parameter version 7). Channel 0 = A (left), 1 = B (right).
+inline const juce::String eqType     = "eqType";       // 0 = VX-10 (10-band), 1 = VX-31 (31-band)
+inline const juce::String eq31Link   = "eq31Link";
+inline const juce::String eq31Range  = "eq31Range15";  // on = +/-15 dB, off = +/-6 dB
+inline juce::String eq31Band (int ch, int band) { return juce::String ("eq31") + (ch == 0 ? "A" : "B") + juce::String (band + 1).paddedLeft ('0', 2); }
+inline juce::String eq31Input (int ch)  { return juce::String ("eq31Input") + (ch == 0 ? "A" : "B"); }
+inline juce::String eq31LowCut (int ch) { return juce::String ("eq31LowCut") + (ch == 0 ? "A" : "B"); }
+inline juce::String eq31Limit (int ch)  { return juce::String ("eq31Limit") + (ch == 0 ? "A" : "B"); }
+inline juce::String eq31Thresh (int ch) { return juce::String ("eq31Threshold") + (ch == 0 ? "A" : "B"); }
+inline juce::String eq31Nr (int ch)     { return juce::String ("eq31NR") + (ch == 0 ? "A" : "B"); }
+inline const char* eq31BandLabel (int b)
+{
+    static const char* labels[] { "20", "25", "31", "40", "50", "63", "80", "100", "125", "160", "200", "250", "315", "400", "500", "630",
+                                  "800", "1K", "1K2", "1K6", "2K", "2K5", "3K2", "4K", "5K", "6K3", "8K", "10K", "12K", "16K", "20K" };
+    return labels[juce::jlimit (0, 30, b)];
+}
 
 /** Delay note divisions (for tempo sync) and their length in beats. */
 inline const juce::StringArray& delayDivisionNames()
@@ -207,6 +223,25 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterFloat> (pid6 (compMix), "Comp Mix", NormalisableRange<float> (0.0f, 1.0f, 0.001f), 1.0f, pctAttr));
     layout.add (std::make_unique<AudioParameterChoice> (pid6 (compPosition), "Comp Position", StringArray { "Pre Amp", "Post Cab", "End" }, 1));
     layout.add (std::make_unique<AudioParameterBool> (pid6 (compMeterOut), "Comp Meter Output", false));
+
+    auto pid7 = [] (const String& id) { return ParameterID { id, 7 }; };
+    layout.add (std::make_unique<AudioParameterChoice> (pid7 (eqType), "EQ Type", StringArray { "VX-10 10-Band", "VX-31 31-Band" }, 0));
+    layout.add (std::make_unique<AudioParameterBool> (pid7 (eq31Link), "VX-31 Link", true));
+    layout.add (std::make_unique<AudioParameterBool> (pid7 (eq31Range), "VX-31 Range 15 dB", true));
+    auto posAttr = AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        { return (v > 0.0f ? "+" : "") + String (roundToInt (v * 100.0f)) + "% of range"; });
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const String c = ch == 0 ? "A" : "B";
+        for (int b = 0; b < 31; ++b)
+            layout.add (std::make_unique<AudioParameterFloat> (pid7 (eq31Band (ch, b)), "VX-31 " + c + " " + eq31BandLabel (b),
+                                                               NormalisableRange<float> (-1.0f, 1.0f, 0.0001f), 0.0f, posAttr));
+        layout.add (std::make_unique<AudioParameterFloat> (pid7 (eq31Input (ch)), "VX-31 " + c + " Input", NormalisableRange<float> (-12.0f, 12.0f, 0.01f), 0.0f, dbAttr));
+        layout.add (std::make_unique<AudioParameterBool> (pid7 (eq31LowCut (ch)), "VX-31 " + c + " Low Cut", false));
+        layout.add (std::make_unique<AudioParameterBool> (pid7 (eq31Limit (ch)), "VX-31 " + c + " Limiter", false));
+        layout.add (std::make_unique<AudioParameterFloat> (pid7 (eq31Thresh (ch)), "VX-31 " + c + " Threshold", NormalisableRange<float> (-30.0f, 0.0f, 0.01f), -6.0f, dbAttr));
+        layout.add (std::make_unique<AudioParameterBool> (pid7 (eq31Nr (ch)), "VX-31 " + c + " Noise Reduction", false));
+    }
 
     for (int k = 0; k < 2; ++k)
     {

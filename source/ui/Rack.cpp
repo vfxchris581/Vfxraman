@@ -349,6 +349,8 @@ EqUnit::EqUnit (VFXAampsProcessor& p) : RackUnit (p, "VX-10", "GRAPHIC EQUALIZER
     flat.getProperties().set ("rack", true);
     flat.getProperties().set ("accent", (int64) accent.getARGB());
     flat.setTooltip ("Set every band to 0 dB");
+    setupChoiceButtons (typeButtons.data(), 2, P::eqType, { "10-BAND", "31-BAND" });
+    typeButtons[1].setTooltip ("Switch the EQ slot to the VX-31 dual 31-band graphic EQ / limiter");
     flat.onClick = [this]
     {
         for (int b = 0; b < 10; ++b)
@@ -364,11 +366,14 @@ void EqUnit::resized()
 {
     layoutPowerButton();
     flat.setBounds (kEar + 88, getHeight() - 38, 64, 24);
+    typeButtons[0].setBounds (kEar + 16, 74, 64, 22);
+    typeButtons[1].setBounds (kEar + 84, 74, 64, 22);
     for (int b = 0; b < 10; ++b) faders[static_cast<size_t> (b)].setBounds (290 + b * 60, 14, 40, getHeight() - 46);
 }
 
 void EqUnit::tick()
 {
+    updateChoiceButtons (typeButtons.data(), 2, P::eqType);
     bool changed = isOn() != shownOn;
     for (int b = 0; b < 10; ++b)
     {
@@ -565,6 +570,183 @@ void ReverbUnit::paintPanel (Graphics& g)
 }
 
 //==============================================================================
+Eq31Unit::Eq31Unit (VFXAampsProcessor& p) : RackUnit (p, "VX-31", "DUAL 31-BAND EQ / LIMITER", Colour (0xff24272d), Colour (0xff4fd17a))
+{
+    powerAtt = std::make_unique<ButtonAttachment> (proc.apvts, P::eqOn, power);
+    power.setTooltip ("EQ on/off");
+    setupChoiceButtons (typeButtons.data(), 2, P::eqType, { "10-BAND", "31-BAND" });
+    typeButtons[0].setTooltip ("Switch the EQ slot back to the VX-10 10-band graphic EQ");
+    for (int b = 0; b < 31; ++b)
+    {
+        auto& f = faders[static_cast<size_t> (b)];
+        f.setSliderStyle (Slider::LinearVertical);
+        f.setTextBoxStyle (Slider::NoTextBox, false, 0, 0);
+        f.setPopupDisplayEnabled (true, true, nullptr, 1200);
+        f.getProperties().set ("fader", true);
+        f.getProperties().set ("accent", (int64) accent.getARGB());
+        f.setDoubleClickReturnValue (true, 0.0);
+        addAndMakeVisible (f);
+    }
+    for (auto* b : { &chanA, &chanB, &flat })
+    {
+        b->getProperties().set ("rack", true);
+        b->getProperties().set ("radio", b != &flat);
+        b->getProperties().set ("accent", (int64) accent.getARGB());
+        addAndMakeVisible (*b);
+    }
+    chanA.onClick = [this] { channel = 0; attachChannel (0); };
+    chanB.onClick = [this] { channel = 1; attachChannel (1); };
+    chanA.setTooltip ("Show channel A (left)");
+    chanB.setTooltip ("Show channel B (right) - with LINK on, B follows A");
+    flat.setTooltip ("Set every fader on this channel to 0");
+    flat.onClick = [this]
+    {
+        for (int b = 0; b < 31; ++b)
+            if (auto* prm = proc.apvts.getParameter (P::eq31Band (channel, b))) prm->setValueNotifyingHost (prm->convertTo0to1 (0.0f));
+    };
+    setupButton (link, linkAtt, P::eq31Link);
+    setupButton (range, rangeAtt, P::eq31Range);
+    link.setTooltip ("Link: channel B uses channel A's settings");
+    range.setTooltip ("Fader range: on = +/-15 dB, off = +/-6 dB");
+    setupKnob (input, P::eq31Input (0), "INPUT", true);
+    setupKnob (threshold, P::eq31Thresh (0), "THRESH");
+    attachChannel (0);
+}
+
+juce::String Eq31Unit::faderText (double position) const
+{
+    const double db = position * (range.getToggleState() ? 15.0 : 6.0);
+    return (db > 0.0 ? "+" : "") + String (db, 1) + " dB";
+}
+
+void Eq31Unit::attachChannel (int ch)
+{
+    attached = ch;
+    for (int b = 0; b < 31; ++b)
+    {
+        auto& f = faders[static_cast<size_t> (b)];
+        faderAtt[static_cast<size_t> (b)].reset();
+        faderAtt[static_cast<size_t> (b)] = std::make_unique<SliderAttachment> (proc.apvts, P::eq31Band (ch, b), f);
+        f.textFromValueFunction = [this] (double v) { return faderText (v); };
+        f.setTooltip (String (P::eq31BandLabel (b)) + (b < 17 ? " Hz" : "Hz") + ", channel " + (ch == 0 ? "A" : "B") + "  (double-click: 0)");
+    }
+    // per-channel controls follow the channel shown
+    for (auto* b : { &lowCut, &nr, &limit }) removeChildComponent (b);
+    lowCutAtt.reset(); nrAtt.reset(); limitAtt.reset();
+    setupButton (lowCut, lowCutAtt, P::eq31LowCut (ch));
+    setupButton (nr, nrAtt, P::eq31Nr (ch));
+    setupButton (limit, limitAtt, P::eq31Limit (ch));
+    lowCut.setTooltip ("Low cut: 40 Hz, 18 dB/octave Bessel high-pass");
+    nr.setTooltip ("Noise reduction: up to 10 dB of broadband downward expansion on quiet hiss");
+    limit.setTooltip ("Peak limiter: holds peaks at THRESH (absolute ceiling 1 dB above)");
+    input.attachment.reset();
+    input.attachment = std::make_unique<SliderAttachment> (proc.apvts, P::eq31Input (ch), input.slider);
+    threshold.attachment.reset();
+    threshold.attachment = std::make_unique<SliderAttachment> (proc.apvts, P::eq31Thresh (ch), threshold.slider);
+    chanA.setToggleState (ch == 0, dontSendNotification);
+    chanB.setToggleState (ch == 1, dontSendNotification);
+    resized();
+    repaint();
+}
+
+void Eq31Unit::resized()
+{
+    layoutPowerButton();
+    flat.setBounds (kEar + 88, getHeight() - 38, 64, 24);
+    typeButtons[0].setBounds (kEar + 16, 74, 64, 22);
+    typeButtons[1].setBounds (kEar + 84, 74, 64, 22);
+    for (int b = 0; b < 31; ++b)
+        faders[static_cast<size_t> (b)].setBounds (262 + roundToInt (b * 21.6), 10, 20, getHeight() - 38);
+    chanA.setBounds (950, 12, 38, 22);
+    chanB.setBounds (992, 12, 38, 22);
+    link.setBounds (1034, 12, 62, 22);
+    range.setBounds (1100, 12, 62, 22);
+    lowCut.setBounds (950, 40, 80, 22);
+    nr.setBounds (1034, 40, 52, 22);
+    limit.setBounds (1090, 40, 72, 22);
+    input.slider.setBounds (Rectangle<int> (42, 42).withCentre ({ 972, 92 }));
+    threshold.slider.setBounds (Rectangle<int> (42, 42).withCentre ({ 1030, 92 }));
+}
+
+void Eq31Unit::tick()
+{
+    updateChoiceButtons (typeButtons.data(), 2, P::eqType);
+    const bool linked = link.getToggleState();
+    chanB.setEnabled (! linked);
+    if (linked && channel != 0) { channel = 0; attachChannel (0); }
+    for (auto& f : faders) f.setAlpha (isOn() ? 1.0f : 0.65f);
+    const int ch = channel;
+    std::array<float, 4> now { proc.getEq31OutputDb (ch), proc.getEq31LimitDb (ch), proc.getEq31NrDb (ch), range.getToggleState() ? 15.0f : 6.0f };
+    if (! isOn()) now = { -100.0f, 0.0f, 0.0f, now[3] };
+    bool changed = false;
+    for (size_t i = 0; i < now.size(); ++i) changed |= std::abs (now[i] - leds[i]) > 0.25f;
+    if (changed) { leds = now; repaint (1088, 66, 80, getHeight() - 66); repaint (250, 0, 700, getHeight()); }
+}
+
+void Eq31Unit::paintPanel (Graphics& g)
+{
+    // fader bank: centre line, half-range lines, labels
+    const auto& f0 = faders[0];
+    const float top = static_cast<float> (f0.getY() + 12), bottom = static_cast<float> (f0.getBottom() - 12), mid = (top + bottom) * 0.5f;
+    const float x0 = static_cast<float> (f0.getX()), x1 = static_cast<float> (faders[30].getRight());
+    for (auto [y, a] : { std::pair<float, uint32> { mid, 0x30ffffffu }, { (top + mid) * 0.5f, 0x14ffffffu }, { (mid + bottom) * 0.5f, 0x14ffffffu },
+                         { top, 0x14ffffffu }, { bottom, 0x14ffffffu } })
+    {
+        g.setColour (Colour (a));
+        g.drawHorizontalLine (static_cast<int> (y), x0, x1);
+    }
+    g.setFont (AmpLookAndFeel::labelFont (7.5f));
+    g.setColour (kText);
+    for (int b = 0; b < 31; ++b)
+    {
+        const auto fb = faders[static_cast<size_t> (b)].getBounds().toFloat();
+        g.drawText (P::eq31BandLabel (b), Rectangle<float> (fb.getCentreX() - 14.0f, fb.getBottom() + 2.0f, 28.0f, 12.0f), Justification::centred);
+    }
+    const String rng = range.getToggleState() ? "15" : "6";
+    g.setFont (AmpLookAndFeel::labelFont (8.0f));
+    g.setColour (kTextDim);
+    g.drawText ("+" + rng, Rectangle<float> (x1 + 2.0f, top - 6.0f, 22.0f, 12.0f), Justification::centredLeft);
+    g.drawText ("0", Rectangle<float> (x1 + 2.0f, mid - 6.0f, 22.0f, 12.0f), Justification::centredLeft);
+    g.drawText ("-" + rng, Rectangle<float> (x1 + 2.0f, bottom - 6.0f, 22.0f, 12.0f), Justification::centredLeft);
+    g.setColour (accent);
+    g.setFont (AmpLookAndFeel::labelFont (9.0f));
+    g.drawText (String ("CH ") + (channel == 0 ? "A" : "B") + (link.getToggleState() ? "  (A+B LINKED)" : ""),
+                Rectangle<float> (kEar + 16.0f, 98.0f, 190.0f, 12.0f), Justification::centredLeft);
+
+    drawCaptions (g, { &input, &threshold });
+
+    // LED meters: output (-10 / 0 / +10 / +18 dBu = -30 / -20 / -10 / -2 dBFS), limiter GR (0 / 3 / 6 / 10 dB), NR
+    auto led = [&] (Point<float> c, Colour col, bool on)
+    {
+        if (on) { g.setColour (col.withAlpha (0.35f)); g.fillEllipse (Rectangle<float> (12.0f, 12.0f).withCentre (c)); }
+        g.setColour (on ? col.brighter (0.3f) : col.withMultipliedBrightness (0.25f));
+        g.fillEllipse (Rectangle<float> (6.5f, 6.5f).withCentre (c));
+        g.setColour (Colour (0x90000000));
+        g.drawEllipse (Rectangle<float> (6.5f, 6.5f).withCentre (c), 0.6f);
+    };
+    const Colour green (0xff3ee07a), yellow (0xffffd23a), red (0xffff3b2f);
+    g.setFont (AmpLookAndFeel::labelFont (7.0f));
+    const float lx = 1100.0f;
+    auto row = [&] (float y, const char* name, std::initializer_list<std::tuple<const char*, Colour, bool>> items)
+    {
+        g.setColour (kTextDim);
+        g.drawText (name, Rectangle<float> (1062.0f, y - 6.0f, 32.0f, 12.0f), Justification::centredRight);
+        float x = lx + 4.0f;
+        for (auto& [label, col, on] : items)
+        {
+            led ({ x, y }, col, on);
+            g.setColour (kTextDim);
+            g.drawText (label, Rectangle<float> (x - 9.0f, y + 4.0f, 18.0f, 9.0f), Justification::centred);
+            x += 18.0f;
+        }
+    };
+    const float out = leds[0], gr = leds[1], nrDb = leds[2];
+    row (76.0f, "OUT", { { "-10", green, out > -30.0f }, { "0", green, out > -20.0f }, { "+10", yellow, out > -10.0f }, { "+18", red, out > -2.0f } });
+    row (100.0f, "LIMIT", { { "0", red, gr > 0.1f }, { "3", red, gr >= 3.0f }, { "6", red, gr >= 6.0f }, { "10", red, gr >= 10.0f } });
+    row (124.0f, "NR", { { "", nrDb < 0.5f ? green : nrDb < 6.0f ? yellow : red, nr.getToggleState() && isOn() } });
+}
+
+//==============================================================================
 CompUnit::CompUnit (VFXAampsProcessor& p) : RackUnit (p, "VX-O2", "TUBE OPTO LEVELER", Colour (0xff3b342c), Colour (0xffffb347))
 {
     powerAtt = std::make_unique<ButtonAttachment> (proc.apvts, P::compOn, power);
@@ -693,8 +875,9 @@ void CompUnit::paintPanel (Graphics& g)
 }
 
 //==============================================================================
-Rack::Rack (VFXAampsProcessor& p) : comp (p), eq (p), delay (p), reverb (p)
+Rack::Rack (VFXAampsProcessor& p) : proc (p), comp (p), eq (p), eq31 (p), delay (p), reverb (p)
 {
+    addChildComponent (eq31);
     addAndMakeVisible (comp);
     addAndMakeVisible (eq);
     addAndMakeVisible (delay);
@@ -706,6 +889,7 @@ void Rack::resized()
 {
     comp.setBounds (14, 10, kWidth - 28, 150);
     eq.setBounds (14, 164, kWidth - 28, 150);
+    eq31.setBounds (eq.getBounds());
     delay.setBounds (14, 318, kWidth - 28, 164);
     reverb.setBounds (14, 486, kWidth - 28, 164);
 }
@@ -713,7 +897,10 @@ void Rack::resized()
 void Rack::tick()
 {
     comp.tick();
-    eq.tick();
+    const bool use31 = paramValue (proc, P::eqType) > 0.5f;
+    eq.setVisible (! use31);
+    eq31.setVisible (use31);
+    if (use31) eq31.tick(); else eq.tick();
     delay.tick();
     reverb.tick();
 }

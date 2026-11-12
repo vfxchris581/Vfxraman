@@ -67,6 +67,7 @@ private:
     std::array<juce::Slider, 10> faders;
     std::array<std::unique_ptr<SliderAttachment>, 10> faderAtt;
     juce::TextButton flat { "FLAT" };
+    std::array<juce::TextButton, 2> typeButtons;
     std::array<float, 10> shown {};
     bool shownOn = false;
 };
@@ -103,6 +104,30 @@ private:
     juce::String shownText;
 };
 
+/** VX-31: dual 31-band graphic EQ / limiter (shown in the EQ slot when EQ TYPE is 31-BAND). The faders show one channel
+    at a time (A / B); with LINK on, B follows A. */
+class Eq31Unit : public RackUnit
+{
+public:
+    explicit Eq31Unit (VFXAampsProcessor&);
+    void resized() override;
+    void tick() override;
+
+private:
+    void paintPanel (juce::Graphics&) override;
+    void attachChannel (int ch);
+    juce::String faderText (double position) const;
+    std::array<juce::Slider, 31> faders;
+    std::array<std::unique_ptr<SliderAttachment>, 31> faderAtt;
+    Knob input, threshold;
+    juce::TextButton chanA { "A" }, chanB { "B" }, link { "LINK" }, range { "+/-15" }, lowCut { "LOW CUT" }, nr { "NR" }, limit { "LIMIT" },
+                     flat { "FLAT" };
+    std::unique_ptr<ButtonAttachment> linkAtt, rangeAtt, lowCutAtt, nrAtt, limitAtt;
+    std::array<juce::TextButton, 2> typeButtons;
+    int channel = 0, attached = -1;
+    std::array<float, 4> leds {};   // shown meter values: out dBFS, limiter GR, NR dB, (unused)
+};
+
 /** Tube opto leveling amp: VU meter (gain reduction / output), GAIN, PEAK REDUCTION, COMPRESS / LIMIT,
     HF emphasis, mix and the chain position (pre amp / post cab / end). */
 class CompUnit : public RackUnit
@@ -135,8 +160,10 @@ public:
     void resized() override;
 
 private:
+    VFXAampsProcessor& proc;
     CompUnit comp;
     EqUnit eq;
+    Eq31Unit eq31;
     DelayUnit delay;
     ReverbUnit reverb;
 };

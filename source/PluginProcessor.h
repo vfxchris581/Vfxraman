@@ -10,6 +10,7 @@
 #include "vfxa/StudioDelay.h"
 #include "vfxa/StudioReverb.h"
 #include "vfxa/OptoLeveler.h"
+#include "vfxa/GraphicEq31.h"
 #include "vfxa/Tuner.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -122,6 +123,10 @@ public:
     float getCompOutputDb() const noexcept { return comp.getOutputDb(); }
     /** Where the compressor is running now (follows the POSITION switch after a short fade). */
     int getCompActivePosition() const noexcept { return compPosNow.load (std::memory_order_relaxed); }
+    /** VX-31 meters (any thread): output peak dBFS, limiter and noise-reduction dB, per channel (0 = A, 1 = B). */
+    float getEq31OutputDb (int ch) const noexcept { return eq31.getOutputDb (ch); }
+    float getEq31LimitDb (int ch) const noexcept { return eq31.getGainReductionDb (ch); }
+    float getEq31NrDb (int ch) const noexcept { return eq31.getNoiseReductionDb (ch); }
     /** Latency the processor wants to report right now (the host is updated from the timer). */
     int getWantedLatency() const noexcept { return latencyWanted.load (std::memory_order_relaxed); }
     float getInputPeak() const noexcept { return inPeak.load (std::memory_order_relaxed); }
@@ -146,6 +151,9 @@ private:
     vfxa::MorphEngine engine;
     vfxa::DualIr irs;
     vfxa::GraphicEq graphicEq;
+    vfxa::GraphicEq31 eq31;
+    vfxa::LinearSmoother eqTypeFade;        // 0 = VX-10, 1 = VX-31; crossfades when the type changes
+    std::vector<float> eqTmpL, eqTmpR;
     vfxa::StudioDelay delay;
     vfxa::StudioReverb reverb;
     vfxa::OptoLeveler comp;
@@ -201,7 +209,10 @@ private:
                       * pRvbProgram = nullptr, * pRvbDiff = nullptr, * pRvbMod = nullptr, * pRvbLowRT = nullptr, * pRvbHighRT = nullptr,
                       * pRvbEarly = nullptr, * pRvbLowCut = nullptr, * pRvbWidth = nullptr,
                       * pCompOn = nullptr, * pCompPeak = nullptr, * pCompGain = nullptr, * pCompLimit = nullptr,
-                      * pCompEmph = nullptr, * pCompMix = nullptr, * pCompPos = nullptr;
+                      * pCompEmph = nullptr, * pCompMix = nullptr, * pCompPos = nullptr,
+                      * pEqType = nullptr, * pEq31Link = nullptr, * pEq31Range = nullptr;
+    std::array<std::array<std::atomic<float>*, vfxa::GraphicEq31::kBands>, 2> pEq31Band {};
+    std::array<std::atomic<float>*, 2> pEq31Input {}, pEq31LowCut {}, pEq31Limit {}, pEq31Thresh {}, pEq31Nr {};
     std::array<std::atomic<float>*, vfxa::GraphicEq::kBands> pEqBand {};
     std::array<std::atomic<float>*, vfxa::kNumSlots> pSlotIr {};
     std::array<std::atomic<float>*, kNumPedals> pPedalOn {}, pPedalLevel {};

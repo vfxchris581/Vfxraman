@@ -6,6 +6,7 @@
 #include "vfxa/StudioDelay.h"
 #include "vfxa/StudioReverb.h"
 #include "vfxa/OptoLeveler.h"
+#include "vfxa/GraphicEq31.h"
 #include "vfxa/Tuner.h"
 
 #include <algorithm>
@@ -549,11 +550,154 @@ static void testOptoLeveler()
     }
 }
 
+
+static void testGraphicEq31()
+{
+    using namespace postfx_tests;
+    using E = vfxa::GraphicEq31;
+    std::printf ("VX-31 dual 31-band graphic EQ / limiter\n");
+    auto runEq = [] (E& e, std::vector<float>& l, std::vector<float>& r, const E::Params& p, int block = 256)
+    {
+        for (size_t i = 0; i < l.size(); i += static_cast<size_t> (block))
+        {
+            const int n = static_cast<int> (std::min<size_t> (static_cast<size_t> (block), l.size() - i));
+            e.process (l.data() + i, r.data() + i, n, p);
+        }
+    };
+    auto gainAt = [&] (double fs, const E::Params& p, double hz)
+    {
+        E e; e.prepare (fs);
+        const double secs = hz < 60.0 ? 2.5 : 0.6; // narrow low bands settle slowly
+        const auto x = tone (fs, secs, hz, 0.05);
+        auto l = x, r = x;
+        runEq (e, l, r, p);
+        const size_t a = static_cast<size_t> (0.5 * secs * fs), b = x.size();
+        return 20.0 * std::log10 (rmsOf (l, a, b) / rmsOf (x, a, b));
+    };
+
+    // neutral (on, flat) and off: bit-exact
+    {
+        E e; e.prepare (48000.0);
+        E::Params p; p.on = true;
+        std::mt19937 rng (4); std::normal_distribution<float> nd (0.0f, 0.2f);
+        std::vector<float> x (24000); for (auto& v : x) v = nd (rng);
+        auto l = x, r = x;
+        runEq (e, l, r, p);
+        CHECK (l == x && r == x, "on with every fader at 0 and nothing engaged: bit-exact");
+    }
+    // every ISO band hits its fader gain at its centre, at 44.1 / 48 / 96 kHz
+    {
+        double worst = 0.0;
+        for (double fs : { 44100.0, 48000.0, 96000.0 })
+            for (int b = 0; b < E::kBands; b += 3)
+            {
+                E::Params p; p.on = true;
+                p.ch[0].gainDb[static_cast<size_t> (b)] = 12.0;
+                worst = std::max (worst, std::fabs (gainAt (fs, p, E::kFreqs[static_cast<size_t> (b)]) - 12.0));
+            }
+        CHECK (worst < 0.2, "each band reaches its fader gain at its ISO centre, 44.1 / 48 / 96 kHz (worst error %.2f dB)", worst);
+    }
+    // constant Q: the same 1/3-octave width (between the half-gain points) at every fader setting, boost or cut
+    {
+        const double fs = 48000.0, fc = 1000.0;
+        std::vector<double> widths;
+        for (double g : { 3.0, 6.0, 12.0, 15.0, -6.0, -15.0 })
+        {
+            E::Params p; p.on = true; p.ch[0].gainDb[17] = g;
+            double lo = 0, hi = 0;
+            for (double f = fc / 1.6; f < fc; f *= 1.004) if (std::fabs (gainAt (fs, p, f)) >= std::fabs (g) / 2.0) { lo = f; break; }
+            for (double f = fc * 1.6; f > fc; f /= 1.004) if (std::fabs (gainAt (fs, p, f)) >= std::fabs (g) / 2.0) { hi = f; break; }
+            widths.push_back (std::log2 (hi / lo));
+        }
+        double mn = 9, mx = 0; for (double w : widths) { mn = std::min (mn, w); mx = std::max (mx, w); }
+        CHECK (mn > 0.30 && mx < 0.37, "constant Q: 1/3-octave width at every setting (%.3f .. %.3f octaves)", mn, mx);
+    }
+    // low cut: 40 Hz, 18 dB/octave, Bessel
+    {
+        E::Params p; p.on = true; p.ch[0].lowCut = true;
+        const double fs = 48000.0;
+        const double g40 = gainAt (fs, p, 40.0), g20 = gainAt (fs, p, 20.0), g10 = gainAt (fs, p, 10.0), g5 = gainAt (fs, p, 5.0), g200 = gainAt (fs, p, 200.0);
+        CHECK (std::fabs (g40 + 3.0) < 0.3, "low cut: -3 dB at 40 Hz (%.2f)", g40);
+        CHECK (g5 - g10 < -15.5 && g5 - g10 > -18.5 && g200 > -0.2, "low cut: 18 dB/octave slope (%.1f dB from 10 to 5 Hz), flat above (%.2f dB at 200 Hz); 20 Hz %.1f dB",
+               g5 - g10, g200, g20);
+    }
+    // range +/-6 (handled by the plug-in mapping) is just the gain; link / unlink; input gain
+    {
+        const double fs = 48000.0;
+        E::Params p; p.on = true; p.link = false; p.ch[0].gainDb[17] = 9.0; p.ch[1].inputDb = -6.0;
+        E e; e.prepare (fs);
+        const auto x = tone (fs, 0.6, 1000.0, 0.05);
+        auto l = x, r = x;
+        runEq (e, l, r, p);
+        const double gl = 20.0 * std::log10 (rmsOf (l, 14400, 28800) / rmsOf (x, 14400, 28800));
+        const double gr = 20.0 * std::log10 (rmsOf (r, 14400, 28800) / rmsOf (x, 14400, 28800));
+        CHECK (std::fabs (gl - 9.0) < 0.2 && std::fabs (gr + 6.0) < 0.05, "unlinked: A +9 dB at 1 kHz (%.2f), B input -6 dB (%.2f)", gl, gr);
+        p.link = true;
+        E e2; e2.prepare (fs);
+        l = x; r = x;
+        runEq (e2, l, r, p);
+        CHECK (l == r, "LINK: channel B follows channel A exactly");
+    }
+    // limiter: holds the threshold (ceiling +1 dB), meters, transparent when not reached
+    {
+        const double fs = 48000.0;
+        E::Params p; p.on = true; p.ch[0].limit = true; p.ch[0].thresholdDb = -12.0;
+        E e; e.prepare (fs);
+        const auto x = tone (fs, 1.0, 220.0, 0.5); // -6 dBFS peak
+        auto l = x, r = x;
+        runEq (e, l, r, p);
+        const double pk = 20.0 * std::log10 (peakAbs (l, 2400, l.size()));
+        CHECK (pk < -11.0 && pk > -13.5 && e.getGainReductionDb (0) > 4.0, "limiter at -12 dBFS: peaks %.2f dBFS, GR %.1f dB", pk, e.getGainReductionDb (0));
+        E e2; e2.prepare (fs);
+        const auto q = tone (fs, 0.5, 220.0, 0.1); // -20 dBFS: under the threshold
+        l = q; r = q;
+        runEq (e2, l, r, p);
+        CHECK (l == q, "limiter below threshold: bit-exact");
+    }
+    // noise reduction: quiet hiss is reduced up to 10 dB, playing level untouched
+    {
+        const double fs = 48000.0;
+        E::Params p; p.on = true; p.ch[0].nr = true;
+        std::mt19937 rng (6); std::normal_distribution<float> nd (0.0f, 0.0001f); // ~ -80 dBFS hiss, well under the knee
+        std::vector<float> hiss (static_cast<size_t> (fs)); for (auto& v : hiss) v = nd (rng);
+        E e; e.prepare (fs);
+        auto l = hiss, r = hiss;
+        runEq (e, l, r, p);
+        const double red = 20.0 * std::log10 (rmsOf (l, 24000, 48000) / rmsOf (hiss, 24000, 48000));
+        const double play = gainAt (fs, p, 330.0);
+        CHECK (red < -8.0 && red > -10.5 && std::fabs (play) < 0.05, "noise reduction: hiss %.1f dB (max 10), playing level %.2f dB", red, play);
+    }
+    // automation of every control and on/off: click-free; extremes bounded
+    {
+        const double fs = 48000.0;
+        E e; e.prepare (fs);
+        std::mt19937 rng (8); std::uniform_real_distribution<double> u (-15.0, 15.0);
+        const auto x = tone (fs, 4.0, 700.0, 0.2);
+        auto l = x, r = x;
+        E::Params p;
+        for (size_t i = 0, blk = 0; i < l.size(); i += 128, ++blk)
+        {
+            if (blk % 8 == 0) for (auto& g : p.ch[0].gainDb) g = u (rng);
+            p.on = (blk / 200) % 2 == 0;
+            p.ch[0].lowCut = (blk / 70) % 2 == 1;
+            p.ch[0].limit = (blk / 90) % 2 == 1;
+            p.ch[0].nr = (blk / 110) % 2 == 1;
+            p.ch[0].inputDb = (blk / 50) % 2 ? 6.0 : -6.0;
+            const int n = static_cast<int> (std::min<size_t> (128, l.size() - i));
+            e.process (l.data() + i, r.data() + i, n, p);
+        }
+        bool finite = true; for (float v : l) finite &= std::isfinite (v);
+        const double limit = 6.0 * 0.2 * 2.0 * kPi * 700.0 / fs * 2.0;
+        CHECK (finite && maxStep (l) < limit, "faders, switches and on/off while playing are click-free (max step %.4f, limit %.4f)", maxStep (l), limit);
+    }
+}
+
 static void testPostFx()
 {
     testGraphicEq();
     testDelay();
     testReverb();
     testOptoLeveler();
+    testGraphicEq31();
     testTuner();
 }

@@ -46,7 +46,12 @@ VST3, AU (macOS) and Standalone; macOS universal (Apple Silicon + Intel) and Win
     program-dependent release (~60 ms to half, then 0.15–4 s), COMPRESS (~3:1, very soft knee) or LIMIT (~9:1), tube output
     stage (~0.1 % THD at nominal level, mostly 2nd harmonic), flat 20 Hz–20 kHz. GAIN, PEAK REDUCTION, HF EMPHASIS, MIX,
     analog VU meter (gain reduction / output). **POSITION** moves it: PRE AMP, POST CAB or END (click-free while playing).
-  - **VX-10 graphic EQ:** 10 bands (31 Hz – 16 kHz, ±12 dB) on faders, a live response curve, FLAT to reset.
+  - **Graphic EQ** — pick the type with the **10-BAND / 31-BAND** buttons (switching is click-free):
+    - **VX-10:** 10 bands (31 Hz – 16 kHz, ±12 dB) on faders, a live response curve, FLAT to reset.
+    - **VX-31 dual 31-band EQ / limiter:** two channels (A / B, LINK), 31 constant-Q 1/3-octave bands on the ISO centres
+      20 Hz – 20 kHz (±15 or ±6 dB), INPUT gain (±12 dB), 40 Hz 18 dB/oct Bessel LOW CUT, NR (up to 10 dB downward
+      expansion), peak LIMIT with THRESH, OUT / LIMIT / NR LEDs. Built to the published specs of a classic dual 31-band
+      graphic EQ / limiter; bit-exact passthrough when flat.
   - **VX-D8 studio multi-delay:** six modes — DIGITAL (pristine), TAPE (wow, flutter, saturation, repeats darken), ANALOG
     (warm bucket-brigade style), MOD (chorused repeats), REVERSE (each stretch of playing comes back backwards) and DUAL
     (right side at 1.5x for a rhythmic spread). Time up to 2.5 s or synced to the host (1/1 … 1/16, dotted, triplet), feedback,

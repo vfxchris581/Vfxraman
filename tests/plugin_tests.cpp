@@ -445,6 +445,10 @@ static void testEditorSnapshot (const File& outDir)
     setParam (p, P::slotIr (1), 0.0f); // show one slot with its IR switched off
     setParam (p, P::compOn, 1.0f);
     setParam (p, P::compPeakRed, 55.0f);
+    setParam (p, P::eqType, 1.0f);
+    for (int b = 0; b < 31; ++b) setParam (p, P::eq31Band (0, b), static_cast<float> (0.35 * std::sin (b * 0.45) - 0.15 * std::cos (b * 1.3)));
+    setParam (p, P::eq31LowCut (0), 1.0f);
+    setParam (p, P::eq31Limit (0), 1.0f);
     p.loadAsset (VFXAampsProcessor::pedalAsset (0), modelFile ("lstm.nam"));
     p.waitForLoads (20000);
     run (p, sine (48000, 0.3, 110.0 * std::pow (2.0, 7.0 / 1200.0)), 256); // slot glow / meters, and A2 +7 cents on the tuner
@@ -766,6 +770,37 @@ static void testResetAndCompressor()
     }
 }
 
+//==============================================================================
+static void testEqTypeSwitch()
+{
+    std::printf ("EQ type: VX-10 / VX-31\n");
+    namespace P = vfxa::params;
+    const double fs = 48000;
+    VFXAampsProcessor p;
+    makeNeutral (p);
+    p.prepareToPlay (fs, 480);
+    setParam (p, P::eqOn, 1.0f);
+    setParam (p, P::eqType, 1.0f);
+    setParam (p, P::eq31Band (0, 17), 0.8f); // 1 kHz, +12 dB at +/-15
+    run (p, std::vector<float> (4800, 0.0f), 480);
+    const auto x = sine (fs, 1.0, 1000.0);
+    auto o = run (p, x, 480);
+    double g = 20.0 * std::log10 (rms (o.l, 24000, 48000) / rms (x, 24000, 48000));
+    CHECK (std::fabs (g - 12.0) < 0.2, "VX-31 1 kHz fader at +80%% of +/-15 dB = %+.2f dB", g);
+    setParam (p, P::eq31Range, 0.0f);
+    run (p, x, 480);
+    o = run (p, x, 480);
+    g = 20.0 * std::log10 (rms (o.l, 24000, 48000) / rms (x, 24000, 48000));
+    CHECK (std::fabs (g - 4.8) < 0.2, "+/-6 dB range: same fader = %+.2f dB", g);
+    // switching type while playing: crossfades, no click
+    const auto pl = sine (fs, 3.0, 220.0, 0.2);
+    setParam (p, P::eqBand (2), 9.0f);
+    o = run (p, pl, 128, [&] (int b, int) { setParam (p, P::eqType, (b / 60) % 2 ? 1.0f : 0.0f); });
+    double step = 0;
+    for (size_t i = 1; i < o.l.size(); ++i) step = std::max (step, (double) std::fabs (o.l[i] - o.l[i - 1]));
+    CHECK (step < 0.06, "switching 10-band / 31-band while playing is click-free (max step %.4f)", step);
+}
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -779,6 +814,7 @@ int main (int argc, char** argv)
     testSlotIrSwitches();
     testPedals();
     testResetAndCompressor();
+    testEqTypeSwitch();
     testEditorSnapshot (shots);
     std::printf ("\n%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
