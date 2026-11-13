@@ -1,4 +1,4 @@
-; VFXAamps — Windows installer (Inno Setup 6)
+; Nam KNoB (formerly VFXAamps) — Windows installer (Inno Setup 6)
 ; Build:  iscc /DMyAppVersion=1.0.0 /DArtefacts=<...\VFXAamps_artefacts\Release> /DOutputDir=<dir> VFXAamps.iss
 
 #ifndef MyAppVersion
@@ -14,7 +14,9 @@
   #define OutputDir "..\..\build\dist"
 #endif
 
-#define MyAppName "VFXAamps"
+#define MyAppName "Nam KNoB"
+#define MyAppFile "NamKNoB"
+#define OldName "VFXAamps"
 #define MyPublisher "Viridian Audio Works"
 
 [Setup]
@@ -30,7 +32,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir={#OutputDir}
-OutputBaseFilename={#MyAppName}-{#MyAppVersion}-Windows-x64-Setup
+OutputBaseFilename={#MyAppFile}-{#MyAppVersion}-Windows-x64-Setup
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
@@ -38,6 +40,13 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 WizardStyle=modern
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
+
+[InstallDelete]
+; the app used to be called VFXAamps: remove the old plug-in (same plug-in ID, it would show twice), app and shortcuts
+Type: filesandordirs; Name: "{commoncf64}\VST3\{#OldName}.vst3"
+Type: files; Name: "{app}\{#OldName}.exe"
+Type: files; Name: "{group}\{#OldName}.lnk"
+Type: files; Name: "{autodesktop}\{#OldName}.lnk"
 
 [Types]
 Name: "full"; Description: "VST3 plug-in and standalone app"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# VFXAamps — macOS installer: a DMG with the standalone app (drag to Applications) and
-# "Install VFXAamps Plug-ins.pkg" (VST3 + AU into /Library/Audio/Plug-Ins).
+# Nam KNoB (formerly VFXAamps) — macOS installer: a DMG with the standalone app (drag to Applications) and
+# "Install Nam KNoB Plug-ins.pkg" (VST3 + AU into /Library/Audio/Plug-Ins).
 #
 #   installer/mac/make_installer.sh <artefacts-dir> <output-dir> [version]
 #
@@ -16,7 +16,9 @@ set -euo pipefail
 ART="${1:?artefacts dir (…/VFXAamps_artefacts/Release)}"
 OUT="${2:?output dir}"
 VERSION="${3:-1.0.0}"
-PRODUCT="VFXAamps"
+PRODUCT="Nam KNoB"
+FILE_NAME="NamKNoB"
+OLD_PRODUCT="VFXAamps"
 IDENT="com.viridianaudioworks.vfxaamps.head"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
@@ -46,17 +48,20 @@ sign "$WORK/vst3/$PRODUCT.vst3"
 sign "$WORK/au/$PRODUCT.component"
 
 # ---- plug-in installer (.pkg) ----------------------------------------------------------
-mkdir -p "$WORK/scripts"
+mkdir -p "$WORK/scripts" "$WORK/scripts-vst3"
+# The plug-ins used to be called VFXAamps; the old bundles have the same plug-in ID, so remove them.
+printf '#!/bin/sh\nrm -rf "/Library/Audio/Plug-Ins/VST3/%s.vst3"\nexit 0\n' "$OLD_PRODUCT" > "$WORK/scripts-vst3/preinstall"
+printf '#!/bin/sh\nrm -rf "/Library/Audio/Plug-Ins/Components/%s.component"\nexit 0\n' "$OLD_PRODUCT" > "$WORK/scripts/preinstall"
 cat > "$WORK/scripts/postinstall" <<'EOF'
 #!/bin/sh
 # Make DAWs rescan the Audio Unit right away.
 killall -9 AudioComponentRegistrar >/dev/null 2>&1 || true
 exit 0
 EOF
-chmod +x "$WORK/scripts/postinstall"
+chmod +x "$WORK/scripts/postinstall" "$WORK/scripts/preinstall" "$WORK/scripts-vst3/preinstall"
 
 pkgbuild --root "$WORK/vst3" --identifier "$IDENT.vst3" --version "$VERSION" \
-         --install-location "/Library/Audio/Plug-Ins/VST3" "$WORK/vst3.pkg"
+         --install-location "/Library/Audio/Plug-Ins/VST3" --scripts "$WORK/scripts-vst3" "$WORK/vst3.pkg"
 pkgbuild --root "$WORK/au" --identifier "$IDENT.au" --version "$VERSION" \
          --install-location "/Library/Audio/Plug-Ins/Components" --scripts "$WORK/scripts" "$WORK/au.pkg"
 
@@ -103,7 +108,7 @@ ditto "$WORK/app/$PRODUCT.app" "$WORK/dmg/$PRODUCT.app"
 ln -s /Applications "$WORK/dmg/Applications"
 cp "$HERE/README.txt" "$WORK/dmg/Read Me.txt"
 
-DMG="$OUT/$PRODUCT-$VERSION-macOS.dmg"
+DMG="$OUT/$FILE_NAME-$VERSION-macOS.dmg"
 rm -f "$DMG"
 hdiutil create -volname "$PRODUCT $VERSION" -srcfolder "$WORK/dmg" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$DMG"
 if [ -n "$SIGN_ID" ]; then

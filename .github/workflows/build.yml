@@ -1,6 +1,6 @@
-name: Build VFXAamps
+name: Build Nam KNoB
 
-# Builds VFXAamps and its installers.
+# Builds Nam KNoB (formerly VFXAamps) and its installers.
 # Every push produces downloadable installers (workflow artifacts);
 # pushing a version tag (v1.0.0, v1.2.3, ...) also attaches them to a GitHub Release.
 on:
@@ -78,9 +78,9 @@ jobs:
 
       - name: Check universal binaries
         run: |
-          lipo -info build/source/VFXAamps_artefacts/Release/VST3/VFXAamps.vst3/Contents/MacOS/VFXAamps
-          lipo -info build/source/VFXAamps_artefacts/Release/AU/VFXAamps.component/Contents/MacOS/VFXAamps
-          lipo -info build/source/VFXAamps_artefacts/Release/Standalone/VFXAamps.app/Contents/MacOS/VFXAamps
+          lipo -info build/source/VFXAamps_artefacts/Release/"VST3/Nam KNoB.vst3/Contents/MacOS/Nam KNoB"
+          lipo -info build/source/VFXAamps_artefacts/Release/"AU/Nam KNoB.component/Contents/MacOS/Nam KNoB"
+          lipo -info build/source/VFXAamps_artefacts/Release/"Standalone/Nam KNoB.app/Contents/MacOS/Nam KNoB"
 
       - name: Import signing certificates (only if secrets are set)
         if: env.MACOS_CERT_P12_BASE64 != ''
@@ -99,14 +99,14 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VFXAamps-macOS-installer
+          name: NamKNoB-macOS-installer
           path: dist/*.dmg
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: VFXAamps-UI-screenshots
+          name: NamKNoB-UI-screenshots
           path: screenshots/*.png
           if-no-files-found: ignore
 
@@ -146,7 +146,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VFXAamps-Windows-installer
+          name: NamKNoB-Windows-installer
           path: dist/*.exe
           if-no-files-found: error
 
@@ -158,7 +158,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: VFXAamps-*-installer
+          pattern: NamKNoB-*-installer
           path: dist
           merge-multiple: true
       - uses: softprops/action-gh-release@v2

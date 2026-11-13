@@ -469,6 +469,42 @@ static void testEditorSnapshot (const File& outDir)
         CHECK (os.openedOk() && png.writeImageToStream (img, os), "write %s", name);
         std::printf ("  wrote %s (%dx%d)\n", f.getFullPathName().toRawUTF8(), img.getWidth(), img.getHeight());
     }
+    // every visible button must receive clicks at its centre (nothing on top of it), at every layout
+    auto hitTestButtons = [&] (const char* layout)
+    {
+        int bad = 0, total = 0;
+        std::function<void (juce::Component&)> walk = [&] (juce::Component& c)
+        {
+            for (auto* child : c.getChildren())
+            {
+                if (! child->isVisible()) continue;
+                if (auto* b = dynamic_cast<juce::Button*> (child))
+                {
+                    ++total;
+                    const auto centre = ed->getLocalPoint (b, b->getLocalBounds().getCentre());
+                    auto* hit = ed->getComponentAt (centre);
+                    if (hit != b && ! b->isParentOf (hit))
+                    {
+                        ++bad;
+                        std::printf ("  [%s] button '%s' covered by %s\n", layout, b->getButtonText().toRawUTF8(),
+                                     hit ? typeid (*hit).name() : "nothing");
+                    }
+                }
+                walk (*child);
+            }
+        };
+        walk (*ed);
+        CHECK (bad == 0 && total > 40, "[%s] %d of %d buttons clickable", layout, total - bad, total);
+    };
+    ed->setVisible (true);
+    hitTestButtons ("full");
+    if (auto* e = dynamic_cast<VFXAampsEditor*> (ed.get()))
+    {
+        e->setSectionsShown (true, false); hitTestButtons ("rack only");
+        e->setSectionsShown (false, true); hitTestButtons ("pedals only");
+        e->setSectionsShown (false, false); hitTestButtons ("amp only");
+        e->setSectionsShown (true, true);
+    }
     if (auto* e = dynamic_cast<VFXAampsEditor*> (ed.get()))
     {
         e->setSectionsShown (false, false);

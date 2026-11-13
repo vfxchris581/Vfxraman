@@ -1,4 +1,4 @@
-# VFXAamps plugin (VST3 / AU / Standalone) and the headless plugin tests.
+# Nam KNoB (target VFXAamps) plugin (VST3 / AU / Standalone) and the headless plugin tests.
 
 set(VFXA_FORMATS VST3 Standalone)
 if(APPLE)
@@ -9,7 +9,7 @@ juce_add_plugin(VFXAamps
     COMPANY_NAME                "Viridian Audio Works"
     COMPANY_WEBSITE             "https://github.com/vfxchris581/Vfxraman"
     BUNDLE_ID                   "com.viridianaudioworks.vfxaamps.head"
-    PRODUCT_NAME                "VFXAamps"
+    PRODUCT_NAME                "Nam KNoB"
     VERSION                     ${PROJECT_VERSION}
     PLUGIN_MANUFACTURER_CODE    Vfxc
     PLUGIN_CODE                 VFXh
@@ -24,7 +24,7 @@ juce_add_plugin(VFXAamps
     AU_MAIN_TYPE                kAudioUnitType_Effect
     ICON_BIG                    "${CMAKE_CURRENT_SOURCE_DIR}/../resources/icon.png"
     MICROPHONE_PERMISSION_ENABLED TRUE
-    MICROPHONE_PERMISSION_TEXT  "VFXAamps uses your audio interface input for your guitar.")
+    MICROPHONE_PERMISSION_TEXT  "Nam KNoB uses your audio interface input for your guitar.")
 
 juce_add_binary_data(VFXAampsAssets
     HEADER_NAME VFXAampsAssets.h

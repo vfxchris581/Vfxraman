@@ -1,12 +1,14 @@
-<p align="center"><img src="docs/logo.png" alt="VFXAamps" width="560"></p>
+<p align="center"><img src="docs/logo.png" alt="Nam KNoB" width="560"></p>
 
-# VFXAamps — NAM amp head
+# Nam KNoB — NAM amp head
+
+*(formerly VFXAamps)*
 
 A professional Neural Amp Modeler amp head with a **10-slot morphing gain knob** and a **dual IR loader**.
 VST3, AU (macOS) and Standalone; macOS universal (Apple Silicon + Intel) and Windows x64.
 
 
-![VFXAamps](docs/vfxaamps-ui.png)
+![Nam KNoB](docs/vfxaamps-ui.png)
 
 ## What it does
 
@@ -73,15 +75,15 @@ VST3, AU (macOS) and Standalone; macOS universal (Apple Silicon + Intel) and Win
 
 ## Download
 
-Every push builds installers in GitHub Actions (**Actions → Build VFXAamps → latest run → Artifacts**):
+Every push builds installers in GitHub Actions (**Actions → Build Nam KNoB → latest run → Artifacts**):
 
-- `VFXAamps-macOS-installer` — a DMG: drag *VFXAamps.app* to Applications; *Install VFXAamps Plug-ins.pkg* puts the VST3 and AU in
+- `NamKNoB-macOS-installer` — a DMG: drag *Nam KNoB.app* to Applications; *Install Nam KNoB Plug-ins.pkg* puts the VST3 and AU in
   `/Library/Audio/Plug-Ins`.
-- `VFXAamps-Windows-installer` — `VFXAamps-…-Windows-x64-Setup.exe`: VST3 into `C:\Program Files\Common Files\VST3`, plus the standalone app.
+- `NamKNoB-Windows-installer` — `NamKNoB-…-Windows-x64-Setup.exe`: VST3 into `C:\Program Files\Common Files\VST3`, plus the standalone app.
 
 Push a version tag (`git tag v1.0.0 && git push origin v1.0.0`) to also attach both installers to a GitHub Release.
 
-> The plug-in files are named `VFXAamps`, like the earlier VFXAamps build from the Better-Amps repository, so installing this one replaces it.
+> Nam KNoB keeps VFXAamps' plug-in ID, so DAW sessions and presets made with VFXAamps open in it. The installers remove the old `VFXAamps` VST3 / AU (delete the old VFXAamps app by hand), and presets move from Documents/VFXAamps to Documents/Nam KNoB on first launch.
 > Its plug-in ID is different (`Vfxc`/`VFXh`), so DAW sessions made with the earlier build won't load into this one.
 
 ### macOS signing (optional)

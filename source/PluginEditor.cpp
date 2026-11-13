@@ -337,7 +337,7 @@ void AmpFace::paintBackground (Graphics& g)
 
     // header: logo, pilot light, CPU meter
     {
-        // Nameplate badge: navy plate with the tree and the VFXAamps lettering.
+        // Nameplate badge: navy plate with the tree and the Nam KNoB lettering.
         const auto badge = Rectangle<float> (56.0f, 42.0f, 188.0f, 46.0f);
         g.setColour (Colour (0x60000000));
         g.fillRoundedRectangle (badge.translated (0.0f, 2.0f).expanded (1.0f), 7.0f);

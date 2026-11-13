@@ -802,6 +802,7 @@ juce::Array<juce::File> VFXAampsProcessor::searchFolders() const
         if (p.isNotEmpty()) dirs.addIfNotAlreadyThere (juce::File (p));
     for (auto* key : { "lastModelDir", "lastIrDir" })
         if (auto p = s.getValue (key); p.isNotEmpty()) dirs.addIfNotAlreadyThere (juce::File (p));
+    dirs.addIfNotAlreadyThere (userFolder());
     dirs.addIfNotAlreadyThere (juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("VFXAamps"));
     return dirs;
 }
@@ -894,9 +895,20 @@ void VFXAampsProcessor::setStateInformation (const void* data, int sizeInBytes)
 }
 
 //==============================================================================
+juce::File VFXAampsProcessor::userFolder()
+{
+    // Documents/Nam KNoB. The app was called VFXAamps before: on first use, move that folder (presets, captures, IRs)
+    // over; copy it if it can't be moved. Files saved with paths into the old folder are found again by name.
+    const auto docs = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+    const auto dir = docs.getChildFile ("Nam KNoB"), old = docs.getChildFile ("VFXAamps");
+    if (! dir.exists() && old.isDirectory() && ! old.moveFileTo (dir))
+        old.copyDirectoryTo (dir);
+    return dir;
+}
+
 juce::File VFXAampsProcessor::getPresetFolder()
 {
-    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("VFXAamps").getChildFile ("Presets");
+    return userFolder().getChildFile ("Presets");
 }
 
 bool VFXAampsProcessor::savePreset (const juce::File& file)

@@ -49,7 +49,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "VFXAamps"; }
+    const juce::String getName() const override { return "Nam KNoB"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -91,6 +91,8 @@ public:
     //==============================================================================
     // Presets (.vfxapreset files: parameters + file paths, relative to the preset as a fallback).
     static juce::File getPresetFolder();
+    /** Documents/Nam KNoB (moved over from Documents/VFXAamps on first use). */
+    static juce::File userFolder();
     bool savePreset (const juce::File& file);
     bool loadPreset (const juce::File& file);
     juce::String getCurrentPresetName() const { return presetName; }
