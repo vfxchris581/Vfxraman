@@ -79,6 +79,7 @@ Every push builds installers in GitHub Actions (**Actions → Build Nam KNoB →
 
 - `NamKNoB-macOS-installer` — a DMG: drag *Nam KNoB.app* to Applications; *Install Nam KNoB Plug-ins.pkg* puts the VST3 and AU in
   `/Library/Audio/Plug-Ins`.
+  The same artifact also has `NamKNoB-VST3-…-macOS.dmg`: just the VST3 plug-in installer.
 - `NamKNoB-Windows-installer` — `NamKNoB-…-Windows-x64-Setup.exe`: VST3 into `C:\Program Files\Common Files\VST3`, plus the standalone app.
 
 Push a version tag (`git tag v1.0.0 && git push origin v1.0.0`) to also attach both installers to a GitHub Release.

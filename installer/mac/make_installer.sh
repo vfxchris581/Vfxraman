@@ -116,3 +116,52 @@ if [ -n "$SIGN_ID" ]; then
     notarize "$DMG"
 fi
 echo "Built $DMG"
+
+# ---- VST3-only DMG: just the VST3 plug-in installer + read-me ------------------------------
+cat > "$WORK/distribution-vst3.xml" <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>$PRODUCT VST3 $VERSION</title>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <domains enable_localSystem="true"/>
+    <choices-outline>
+        <line choice="vst3"/>
+    </choices-outline>
+    <choice id="vst3" title="VST3 plug-in" description="Installs $PRODUCT.vst3 into /Library/Audio/Plug-Ins/VST3">
+        <pkg-ref id="$IDENT.vst3"/>
+    </choice>
+    <pkg-ref id="$IDENT.vst3" version="$VERSION">vst3.pkg</pkg-ref>
+</installer-gui-script>
+EOF
+mkdir -p "$WORK/dmg-vst3"
+VST3_PKG="$WORK/dmg-vst3/Install $PRODUCT VST3.pkg"
+if [ -n "${MACOS_PKG_SIGN_ID:-}" ]; then
+    productbuild --distribution "$WORK/distribution-vst3.xml" --package-path "$WORK" --sign "$MACOS_PKG_SIGN_ID" --timestamp "$VST3_PKG"
+    notarize "$VST3_PKG"
+else
+    productbuild --distribution "$WORK/distribution-vst3.xml" --package-path "$WORK" "$VST3_PKG"
+fi
+cat > "$WORK/dmg-vst3/Read Me.txt" <<EOF
+$PRODUCT $VERSION - VST3 plug-in for macOS (Apple Silicon and Intel)
+
+INSTALL
+  1. Double-click "Install $PRODUCT VST3.pkg" and follow the steps.
+     It installs /Library/Audio/Plug-Ins/VST3/$PRODUCT.vst3
+     (and removes the old $OLD_PRODUCT.vst3 if it is there).
+  2. Rescan plug-ins in your DAW.
+
+IF macOS BLOCKS IT
+  Right-click the installer, choose Open, then Open again
+  (or System Settings > Privacy & Security > "Open Anyway").
+  If a DAW still refuses the plug-in, run in Terminal:
+      sudo xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/VST3/$PRODUCT.vst3"
+EOF
+
+VST3_DMG="$OUT/$FILE_NAME-VST3-$VERSION-macOS.dmg"
+rm -f "$VST3_DMG"
+hdiutil create -volname "$PRODUCT VST3 $VERSION" -srcfolder "$WORK/dmg-vst3" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$VST3_DMG"
+if [ -n "$SIGN_ID" ]; then
+    codesign --force --timestamp --sign "$SIGN_ID" "$VST3_DMG"
+    notarize "$VST3_DMG"
+fi
+echo "Built $VST3_DMG"
