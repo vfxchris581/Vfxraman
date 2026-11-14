@@ -27,6 +27,17 @@ run_host() {
     echo "::endgroup::"
 }
 
+# Nothing of NAM / Eigen / nlohmann may be exported: macOS would share it with other loaded plug-ins that export
+# their own (differently built) copy, e.g. the official NAM plug-in, and the DAW would crash.
+for bin in "$VST3/Contents/MacOS/Nam KNoB" "$AU_SRC/Contents/MacOS/Nam KNoB"; do
+    leaked="$(nm -gU -arch all "$bin" 2>/dev/null | c++filt | grep -E "nam::|nlohmann::|Eigen::" | grep -v "std::" | head -5)"
+    if [ -n "$leaked" ]; then
+        echo "::error::$bin exports NAM / Eigen / JSON symbols:"; echo "$leaked"; failed=1
+    else
+        echo "no NAM / Eigen / JSON symbols exported: $bin"
+    fi
+done
+
 # AU has to be installed for hosts (and auval) to find it
 mkdir -p "$(dirname "$AU")"
 rm -rf "$AU"

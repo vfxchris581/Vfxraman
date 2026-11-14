@@ -54,6 +54,10 @@ target_include_directories(vfxa_dsp
     PRIVATE ${VFXA_NAM_DIR} ${VFXA_NAM_DIR}/NAM ${VFXA_NAM_DIR}/Dependencies/nlohmann)
 target_include_directories(vfxa_dsp SYSTEM PRIVATE ${VFXA_EIGEN_DIR})
 target_compile_definitions(vfxa_dsp PRIVATE NAM_SAMPLE_FLOAT NAM_ENABLE_A2_FAST EIGEN_MPL2_ONLY)
+# Keep NAM / Eigen / nlohmann private to our binary. Exported, their inline functions and statics (e.g. NAM's
+# architecture registry) get shared on macOS with any other loaded plug-in that also exports them (the official NAM
+# plug-in, other NAM-based plug-ins): we would end up running their, differently built, NAM code -> crash in the DAW.
+set_target_properties(vfxa_dsp PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
 if(MSVC)
     target_compile_options(vfxa_dsp PRIVATE /bigobj /W3 /fp:fast)
     target_compile_definitions(vfxa_dsp PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _USE_MATH_DEFINES)

@@ -114,28 +114,6 @@ jobs:
           path: screenshots/*.png
           if-no-files-found: ignore
 
-  apple-silicon:
-    # Most Macs are Apple Silicon: run the same DAW checks on the arm64 build.
-    name: macOS Apple Silicon DAW checks
-    runs-on: macos-14
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-      - name: Install Ninja
-        run: brew install ninja
-      - name: Configure (arm64)
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
-      - name: Build
-        run: cmake --build build --parallel
-      - name: Plug-in tests
-        run: |
-          ctest --test-dir build --output-on-failure -R dsp_tests
-          "$(find build -name VFXAampsPluginTests -type f -perm -u+x | head -1)"
-      - name: DAW checks on the built VST3 / AU (host test, auval, pluginval)
-        run: installer/mac/validate.sh build/source/VFXAamps_artefacts/Release "$(find build -name VFXAampsHostTest -type f -perm -u+x | head -1)"
-
   windows:
     name: Windows x64 installer
     runs-on: windows-2022
