@@ -53,7 +53,9 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.5; } // longest typical cab IR
+    /** How long the output rings on after the input stops (cab IRs, delay repeats, reverb decay): hosts use it to
+        keep processing past the end of a region and when bouncing, so tails are not cut off. */
+    double getTailLengthSeconds() const override;
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -180,7 +182,7 @@ private:
     std::array<std::atomic<float>, kNumPedals> pedalMeter {};
     std::atomic<bool> tunerMute { false };
     vfxa::LinearSmoother tunerGate;
-    double hostBpm = 120.0;
+    std::atomic<double> hostBpm { 120.0 }; // written on the audio thread, read by getTailLengthSeconds()
     std::atomic<float> delayTimeMs { 400.0f };
     vfxa::NoiseGate gate;
     vfxa::Limiter limiterL;

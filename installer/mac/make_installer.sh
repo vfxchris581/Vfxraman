@@ -50,8 +50,9 @@ sign "$WORK/au/$PRODUCT.component"
 # ---- plug-in installer (.pkg) ----------------------------------------------------------
 mkdir -p "$WORK/scripts" "$WORK/scripts-vst3"
 # The plug-ins used to be called VFXAamps; the old bundles have the same plug-in ID, so remove them.
-printf '#!/bin/sh\nrm -rf "/Library/Audio/Plug-Ins/VST3/%s.vst3"\nexit 0\n' "$OLD_PRODUCT" > "$WORK/scripts-vst3/preinstall"
-printf '#!/bin/sh\nrm -rf "/Library/Audio/Plug-Ins/Components/%s.component"\nexit 0\n' "$OLD_PRODUCT" > "$WORK/scripts/preinstall"
+# Both the system folder and every user's own plug-in folder (DAWs scan both).
+printf '#!/bin/sh\nfor d in /Library /Users/*/Library; do rm -rf "$d/Audio/Plug-Ins/VST3/%s.vst3"; done\nexit 0\n' "$OLD_PRODUCT" > "$WORK/scripts-vst3/preinstall"
+printf '#!/bin/sh\nfor d in /Library /Users/*/Library; do rm -rf "$d/Audio/Plug-Ins/Components/%s.component"; done\nexit 0\n' "$OLD_PRODUCT" > "$WORK/scripts/preinstall"
 cat > "$WORK/scripts/postinstall" <<'EOF'
 #!/bin/sh
 # Make DAWs rescan the Audio Unit right away.

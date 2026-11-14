@@ -53,7 +53,7 @@ set(VFXA_JUCE_DEFS
     JUCE_REPORT_APP_USAGE=0
     JUCE_MODAL_LOOPS_PERMITTED=0)
 
-target_compile_definitions(VFXAamps PUBLIC ${VFXA_JUCE_DEFS})
+target_compile_definitions(VFXAamps PUBLIC ${VFXA_JUCE_DEFS} ${VFXA_EXTRA_PLUGIN_DEFS}) # extra: e.g. JUCE_ALSA=0 on a Linux box without ALSA headers
 target_link_libraries(VFXAamps
     PRIVATE
         vfxa_dsp
@@ -76,4 +76,15 @@ if(VFXA_BUILD_TESTS)
     target_link_libraries(VFXAampsPluginTests PRIVATE
         vfxa_dsp VFXAampsAssets juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
     add_test(NAME plugin_tests COMMAND VFXAampsPluginTests)
+endif()
+
+# Host compatibility tests: loads the built plug-in through JUCE's plug-in hosting, like a DAW (tests/host_tests.cpp).
+if(VFXA_BUILD_TESTS)
+    juce_add_console_app(VFXAampsHostTest PRODUCT_NAME "VFXAampsHostTest")
+    target_sources(VFXAampsHostTest PRIVATE ../tests/host_tests.cpp)
+    target_compile_definitions(VFXAampsHostTest PRIVATE ${VFXA_EXTRA_TEST_DEFS}
+        JUCE_PLUGINHOST_VST3=1 JUCE_PLUGINHOST_AU=1 JUCE_PLUGINHOST_LADSPA=0 JUCE_PLUGINHOST_LV2=0
+        JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0 JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(VFXAampsHostTest PRIVATE
+        juce::juce_audio_processors juce::juce_audio_formats juce::juce_audio_utils juce::juce_recommended_config_flags)
 endif()

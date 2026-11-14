@@ -191,6 +191,27 @@ void VFXAampsProcessor::applyOversamplingChoice (int choice) noexcept
     toneCountdown = 0;
 }
 
+double VFXAampsProcessor::getTailLengthSeconds() const
+{
+    namespace P = vfxa::params;
+    auto value = [this] (const juce::String& id) -> double
+    {
+        if (auto* v = apvts.getRawParameterValue (id)) return v->load (std::memory_order_relaxed);
+        return 0.0;
+    };
+    double tail = 0.5; // cab IRs
+    if (value (P::rvbOn) > 0.5)
+        tail = std::max (tail, value (P::rvbDecay) * std::max (1.0, value (P::rvbLowRT)) + value (P::rvbPre) / 1000.0 + 0.5);
+    if (value (P::dlyOn) > 0.5)
+    {
+        const double seconds = value (P::dlySync) > 0.5 ? 4.0 * 60.0 / std::max (20.0, hostBpm.load (std::memory_order_relaxed)) : value (P::dlyTime) / 1000.0;
+        const double fb = std::clamp (value (P::dlyFeedback), 0.001, 0.95);
+        const double repeats = 60.0 / (-20.0 * std::log10 (fb)) + 1.0; // repeats until -60 dB
+        tail = std::max (tail, seconds * repeats + 0.5);
+    }
+    return std::min (tail, 60.0);
+}
+
 int VFXAampsProcessor::computeLatency() const noexcept
 {
     int l = engine.latencySamples();
@@ -264,7 +285,7 @@ void VFXAampsProcessor::process (juce::AudioBuffer<T>& buffer)
     // host tempo for the synced delay
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition())
-            if (auto bpm = pos->getBpm(); bpm.hasValue() && *bpm > 20.0 && *bpm < 400.0) hostBpm = *bpm;
+            if (auto bpm = pos->getBpm(); bpm.hasValue() && *bpm > 20.0 && *bpm < 400.0) hostBpm.store (*bpm, std::memory_order_relaxed);
     float peakIn = 0.0f, peakOut = 0.0f;
 
     for (int start = 0; start < total; start += maxBlock)
@@ -526,7 +547,7 @@ void VFXAampsProcessor::processChunk (int n) noexcept
         dp.on = ld (pDlyOn) > 0.5;
         dp.mode = static_cast<int> (ld (pDlyMode));
         const bool sync = ld (pDlySync) > 0.5;
-        dp.timeMs = sync ? vfxa::params::delayDivisionBeats (static_cast<int> (ld (pDlyDiv))) * 60000.0 / hostBpm : ld (pDlyTime);
+        dp.timeMs = sync ? vfxa::params::delayDivisionBeats (static_cast<int> (ld (pDlyDiv))) * 60000.0 / hostBpm.load (std::memory_order_relaxed) : ld (pDlyTime);
         dp.timeMs = std::min (dp.timeMs, vfxa::StudioDelay::kMaxSeconds * 1000.0);
         delayTimeMs.store (static_cast<float> (dp.timeMs), std::memory_order_relaxed);
         dp.feedback = ld (pDlyFb);
